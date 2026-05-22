@@ -7,6 +7,7 @@ import {
   sessionStatus, 
   WS_ALERTS 
 } from '../api';
+import { addXP } from '../utils';
 
 const SessionContext = createContext(null);
 
@@ -65,6 +66,17 @@ export function SessionProvider({ children }) {
 
     if (pomodoroState === 'focus') {
       // Focus ended -> Start Break
+      // Reward XP for completing Pomodoro Focus cycle!
+      const xpReward = 25 * 5; // 25 minutes * 5 XP = 125 XP!
+      addXP(xpReward);
+      window.dispatchEvent(new Event('storage'));
+      
+      if (Notification.permission === 'granted') {
+        new Notification("Pomodoro Cycle Completed! 🎉", {
+          body: `Superb! You finished your 25-minute Pomodoro focus interval and earned +${xpReward} XP!`
+        });
+      }
+
       if (pomodoroCycle >= pomodoroIntervals) {
         setPomodoroState('long_break');
         setOnBreak(true);
@@ -192,6 +204,22 @@ export function SessionProvider({ children }) {
   }, []);
 
   const stop = useCallback(async () => {
+    // Reward XP for completed focus minutes before resetting
+    const elapsedSeconds = totalTime - timeLeft;
+    if (isActive && !onBreak && elapsedSeconds >= 60) {
+      const minutes = Math.floor(elapsedSeconds / 60);
+      const xpReward = minutes * 5;
+      if (xpReward > 0) {
+        addXP(xpReward);
+        window.dispatchEvent(new Event('storage'));
+        if (Notification.permission === 'granted') {
+          new Notification("XP Earned! ⚡", {
+            body: `You completed ${minutes} focus minutes and earned +${xpReward} Focus XP!`
+          });
+        }
+      }
+    }
+
     try {
       if (isActive) await apiStop();
     } catch {}
@@ -203,7 +231,7 @@ export function SessionProvider({ children }) {
     setPomodoroCycle(1);
     setTimeLeft(25 * 60);
     setTotalTime(25 * 60);
-  }, [isActive]);
+  }, [isActive, onBreak, totalTime, timeLeft]);
 
   const dismissAlert = useCallback(() => setAlert(null), []);
 

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { SessionProvider } from './context/SessionContext';
 import { ThemeProvider } from './context/ThemeContext';
@@ -9,6 +9,8 @@ import TodoList from './components/TodoList';
 import Insights from './components/Insights';
 import CalendarView from './components/CalendarView';
 import LiveSessionTimeline from './components/LiveSessionTimeline';
+import { playSound } from './utils';
+
 
 // ── Dashboard Page ─────────────────────────────────────
 function DashboardPage() {
@@ -61,6 +63,19 @@ function CalendarPage() {
 
 // ── App Root ───────────────────────────────────────────
 function App() {
+  useEffect(() => {
+    const handleGlobalClick = (e) => {
+      const interactiveEl = e.target.closest('button, a, input, select, textarea, [role="button"], .cursor-pointer');
+      if (interactiveEl) {
+        playSound('click');
+      }
+    };
+    window.addEventListener('click', handleGlobalClick, { capture: true });
+    return () => {
+      window.removeEventListener('click', handleGlobalClick, { capture: true });
+    };
+  }, []);
+
   return (
     <BrowserRouter>
       <ThemeProvider>

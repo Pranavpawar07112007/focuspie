@@ -22,7 +22,7 @@ export const updateTodo  = (id, updates) => api.put(`/todos/${id}`, updates).the
 export const deleteTodo  = (id) => api.delete(`/todos/${id}`).then(r => r.data);
 
 // ─── Insights & AI Forecast ───────────────────────────
-export const getInsights = () => api.get('/insights').then(r => r.data);
+export const getInsights = (range = 'today') => api.get(`/insights?range=${range}`).then(r => r.data);
 export const getMlForecast = () => api.get('/ml/predict').then(r => r.data);
 
 // ─── Calendar ─────────────────────────────────────────

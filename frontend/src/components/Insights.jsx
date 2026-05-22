@@ -59,6 +59,7 @@ const CustomTooltip = ({ active, payload, label }) => {
 
 export default function Insights({ compact = false }) {
   const [viewMode, setViewMode] = useState('overview'); // 'overview', 'explorer'
+  const [timeRange, setTimeRange] = useState('today'); // 'today', 'week', 'all'
   const [data, setData] = useState(null);
   const [sessions, setSessions] = useState([]);
   const [mlData, setMlData] = useState(null);
@@ -81,7 +82,7 @@ export default function Insights({ compact = false }) {
     setDeleteError(null);
     try {
       await deleteSession(sessionToDeleteId);
-      await loadData(true); // Silent reload after delete
+      await loadData(true, timeRange); // Silent reload after delete
       setSelectedSessionId(null);
       setSelectedSession(null);
       setIsDeleteModalOpen(false);
@@ -94,11 +95,11 @@ export default function Insights({ compact = false }) {
     }
   };
 
-  const loadData = async (isSilent = false) => {
+  const loadData = async (isSilent = false, activeRange = timeRange) => {
     if (!isSilent) setLoading(true);
     try {
       const [insightsRes, sessionsRes, mlRes] = await Promise.all([
-        getInsights().catch(() => null),
+        getInsights(activeRange).catch(() => null),
         getSessions().catch(() => []),
         getMlForecast().catch(() => null)
       ]);
@@ -112,15 +113,15 @@ export default function Insights({ compact = false }) {
     }
   };
 
-  // Mount effect for initial data load
+  // Fetch data when range changes (and on initial mount)
   useEffect(() => {
-    loadData(false);
-  }, []);
+    loadData(false, timeRange);
+  }, [timeRange]);
 
   // Background polling for dynamic updates (every 6 seconds)
   useEffect(() => {
     const interval = setInterval(async () => {
-      await loadData(true);
+      await loadData(true, timeRange);
       
       if (selectedSessionId) {
         try {
@@ -133,7 +134,7 @@ export default function Insights({ compact = false }) {
     }, 6000);
 
     return () => clearInterval(interval);
-  }, [selectedSessionId]);
+  }, [selectedSessionId, timeRange]);
 
   const handleSelectSession = async (id) => {
     setSelectedSessionId(id);
@@ -157,7 +158,7 @@ export default function Insights({ compact = false }) {
     );
   }
 
-  if (!data || sessions.length === 0) {
+  if (sessions.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-slate-500">
         <Activity className="w-12 h-12 mb-4 text-brand-blue opacity-55 animate-float" />
@@ -167,26 +168,60 @@ export default function Insights({ compact = false }) {
     );
   }
 
+  if (!data) {
+    return (
+      <div className="flex flex-col items-center justify-center py-32 space-y-4">
+        <div className="w-10 h-10 border-2 border-slate-300 border-t-brand-blue rounded-full animate-spin" />
+        <p className="text-xs text-slate-500 font-semibold tracking-wider uppercase animate-pulse">Synchronizing metrics...</p>
+      </div>
+    );
+  }
+
   const { summary, timeline, top_distractions } = data;
 
   if (compact) {
     return (
-      <div className="space-y-4">
-        <h3 className="text-sm font-display font-bold text-black dark:text-white tracking-wide">Quick Stats</h3>
+      <div className="space-y-4 animate-fade-in">
+        <div className="flex justify-between items-center">
+          <h3 className="text-sm font-display font-bold text-black dark:text-white tracking-wide flex items-center gap-1.5">
+            <TrendingUp className="w-4 h-4 text-brand-blue" />
+            Quick Stats
+          </h3>
+          <div className="flex bg-slate-100 dark:bg-white/[0.04] p-0.5 rounded-lg border border-slate-200/50 dark:border-white/[0.06] text-[10px]">
+            {['today', 'week', 'all'].map((r) => (
+              <button
+                key={r}
+                onClick={() => setTimeRange(r)}
+                className={`py-0.5 px-2 rounded-md font-bold capitalize transition-all duration-200 ${
+                  timeRange === r
+                    ? 'bg-white dark:bg-white/[0.08] text-brand-blue shadow-sm border border-slate-200/10'
+                    : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                }`}
+              >
+                {r === 'all' ? 'All' : r === 'week' ? 'Week' : 'Today'}
+              </button>
+            ))}
+          </div>
+        </div>
+        
         <div className="grid grid-cols-2 gap-3">
-          <div className="glass p-4 text-center">
+          <div className="glass p-4 text-center glass-hover transition-all duration-300 relative overflow-hidden">
+            <div className="absolute inset-0 bg-gradient-to-br from-brand-blue/[0.01] to-transparent pointer-events-none" />
             <p className="text-2xl font-display font-bold text-brand-blue">{summary.total_focus_minutes}</p>
             <p className="text-[10px] text-slate-500 uppercase tracking-widest mt-1 font-bold">Focus min</p>
           </div>
-          <div className="glass p-4 text-center">
+          <div className="glass p-4 text-center glass-hover transition-all duration-300 relative overflow-hidden">
+            <div className="absolute inset-0 bg-gradient-to-br from-brand-rose/[0.01] to-transparent pointer-events-none" />
             <p className="text-2xl font-display font-bold text-brand-rose">{summary.total_distraction_minutes}</p>
             <p className="text-[10px] text-slate-500 uppercase tracking-widest mt-1 font-bold">Distracted</p>
           </div>
-          <div className="glass p-4 text-center">
+          <div className="glass p-4 text-center glass-hover transition-all duration-300 relative overflow-hidden">
+            <div className="absolute inset-0 bg-gradient-to-br from-purple-500/[0.01] to-transparent pointer-events-none" />
             <p className="text-2xl font-display font-bold text-black dark:text-white">{summary.total_sessions}</p>
             <p className="text-[10px] text-slate-500 uppercase tracking-widest mt-1 font-bold">Sessions</p>
           </div>
-          <div className="glass p-4 text-center">
+          <div className="glass p-4 text-center glass-hover transition-all duration-300 relative overflow-hidden">
+            <div className="absolute inset-0 bg-gradient-to-br from-brand-emerald/[0.01] to-transparent pointer-events-none" />
             <p className="text-2xl font-display font-bold text-brand-emerald">{summary.focus_score}%</p>
             <p className="text-[10px] text-slate-500 uppercase tracking-widest mt-1 font-bold">Focus Score</p>
           </div>
@@ -208,36 +243,56 @@ export default function Insights({ compact = false }) {
           <p className="text-sm text-slate-500 mt-1">Deep circadian analysis, machine learning forecasts, and multi-session timeline drill downs.</p>
         </div>
 
-        {/* View toggles */}
-        <div className="flex bg-slate-100 dark:bg-white/[0.04] p-1 rounded-xl border border-slate-200/50 dark:border-white/[0.06]">
-          <button
-            onClick={() => setViewMode('overview')}
-            className={`py-2 px-4 rounded-lg text-xs font-semibold tracking-wide transition-all duration-200 flex items-center gap-1.5 ${
-              viewMode === 'overview'
-                ? 'bg-white dark:bg-white/[0.08] text-brand-blue shadow-sm border border-slate-200/20'
-                : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
-            }`}
-          >
-            <TrendingUp className="w-3.5 h-3.5" />
-            Aggregate Analytics
-          </button>
-          <button
-            onClick={() => {
-              setViewMode('explorer');
-              // Auto-select first session if none selected
-              if (!selectedSessionId && sessions.length > 0) {
-                handleSelectSession(sessions[0].id);
-              }
-            }}
-            className={`py-2 px-4 rounded-lg text-xs font-semibold tracking-wide transition-all duration-200 flex items-center gap-1.5 ${
-              viewMode === 'explorer'
-                ? 'bg-white dark:bg-white/[0.08] text-brand-blue shadow-sm border border-slate-200/20'
-                : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
-            }`}
-          >
-            <Activity className="w-3.5 h-3.5" />
-            Session Explorer
-          </button>
+        {/* View & Range toggles */}
+        <div className="flex flex-wrap items-center gap-3">
+          {viewMode === 'overview' && (
+            <div className="flex bg-slate-100 dark:bg-white/[0.04] p-1 rounded-xl border border-slate-200/50 dark:border-white/[0.06]">
+              {['today', 'week', 'all'].map((r) => (
+                <button
+                  key={r}
+                  onClick={() => setTimeRange(r)}
+                  className={`py-1.5 px-3.5 rounded-lg text-xs font-semibold capitalize transition-all duration-200 ${
+                    timeRange === r
+                      ? 'bg-white dark:bg-white/[0.08] text-brand-blue shadow-sm border border-slate-200/20'
+                      : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                  }`}
+                >
+                  {r === 'all' ? 'All Time' : r === 'week' ? 'This Week' : 'Today'}
+                </button>
+              ))}
+            </div>
+          )}
+
+          <div className="flex bg-slate-100 dark:bg-white/[0.04] p-1 rounded-xl border border-slate-200/50 dark:border-white/[0.06]">
+            <button
+              onClick={() => setViewMode('overview')}
+              className={`py-2 px-4 rounded-lg text-xs font-semibold tracking-wide transition-all duration-200 flex items-center gap-1.5 ${
+                viewMode === 'overview'
+                  ? 'bg-white dark:bg-white/[0.08] text-brand-blue shadow-sm border border-slate-200/20'
+                  : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+              }`}
+            >
+              <TrendingUp className="w-3.5 h-3.5" />
+              Aggregate Analytics
+            </button>
+            <button
+              onClick={() => {
+                setViewMode('explorer');
+                // Auto-select first session if none selected
+                if (!selectedSessionId && sessions.length > 0) {
+                  handleSelectSession(sessions[0].id);
+                }
+              }}
+              className={`py-2 px-4 rounded-lg text-xs font-semibold tracking-wide transition-all duration-200 flex items-center gap-1.5 ${
+                viewMode === 'explorer'
+                  ? 'bg-white dark:bg-white/[0.08] text-brand-blue shadow-sm border border-slate-200/20'
+                  : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+              }`}
+            >
+              <Activity className="w-3.5 h-3.5" />
+              Session Explorer
+            </button>
+          </div>
         </div>
       </div>
 

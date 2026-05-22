@@ -629,12 +629,39 @@ def get_calendar(db: Session = Depends(get_db)):
 # ─── Insights Endpoint (REAL data) ───────────────────────────────────
 
 @app.get("/api/insights")
-def get_insights(db: Session = Depends(get_db)):
-    sessions = db.query(FocusSession).filter(FocusSession.status == "completed").all()
+def get_insights(range: str = "today", db: Session = Depends(get_db)):
+    now = datetime.now()
+    
+    # Filter base queries by date range
+    if range == "today":
+        start_time = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        sessions = db.query(FocusSession).filter(FocusSession.status == "completed", FocusSession.start_time >= start_time).all()
+        logs = db.query(WindowLog).filter(WindowLog.timestamp >= start_time).all()
+        
+        # Filter todos due today or created today
+        end_time = now.replace(hour=23, minute=59, second=59, microsecond=999999)
+        todos = db.query(Todo).filter(
+            ((Todo.deadline >= start_time) & (Todo.deadline <= end_time)) |
+            ((Todo.created_at >= start_time) & (Todo.created_at <= end_time))
+        ).all()
+    elif range == "week":
+        start_time = now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=7)
+        sessions = db.query(FocusSession).filter(FocusSession.status == "completed", FocusSession.start_time >= start_time).all()
+        logs = db.query(WindowLog).filter(WindowLog.timestamp >= start_time).all()
+        
+        todos = db.query(Todo).filter(
+            (Todo.deadline >= start_time) |
+            (Todo.created_at >= start_time)
+        ).all()
+    else:
+        # "all"
+        sessions = db.query(FocusSession).filter(FocusSession.status == "completed").all()
+        logs = db.query(WindowLog).all()
+        todos = db.query(Todo).all()
+
     total_focus_seconds = sum(s.total_duration or 0 for s in sessions)
     total_sessions = len(sessions)
 
-    logs = db.query(WindowLog).all()
     distraction_seconds = sum(1 for l in logs if l.is_distraction)
     focus_seconds = sum(1 for l in logs if not l.is_distraction)
 
@@ -679,7 +706,6 @@ def get_insights(db: Session = Depends(get_db)):
         })
 
     # Task stats
-    todos = db.query(Todo).all()
     task_stats = {
         "total": len(todos),
         "pending": sum(1 for t in todos if t.status == "pending"),
