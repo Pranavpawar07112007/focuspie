@@ -51,7 +51,7 @@ function TaskCard({ todo, onToggle, onDelete, onStatusChange }) {
         <div className="flex-1 min-w-0">
           {/* Task text */}
           <p className={`text-sm leading-snug transition-all ${
-            todo.status === 'completed' ? 'line-through text-slate-500' : 'text-slate-200'
+            todo.status === 'completed' ? 'line-through text-slate-500' : 'text-black dark:text-slate-200'
           }`}>
             {todo.task}
           </p>
@@ -116,8 +116,8 @@ function Column({ title, count, color, children }) {
     <div className="flex-1 min-w-[280px]">
       <div className="flex items-center gap-2 mb-4 px-1">
         <div className="w-2.5 h-2.5 rounded-full" style={{ background: color }} />
-        <h4 className="text-sm font-semibold text-white">{title}</h4>
-        <span className="text-[10px] font-bold text-slate-500 bg-white/[0.04] px-2 py-0.5 rounded-full ml-auto">
+        <h4 className="text-sm font-semibold text-black dark:text-white">{title}</h4>
+        <span className="text-[10px] font-bold text-slate-500 bg-slate-100 dark:bg-white/[0.04] px-2 py-0.5 rounded-full ml-auto">
           {count}
         </span>
       </div>
@@ -183,7 +183,7 @@ export default function TodoList({ compact = false }) {
     return (
       <div>
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-display font-bold text-white">Tasks</h3>
+          <h3 className="text-lg font-display font-bold text-black dark:text-white">Tasks</h3>
           <button onClick={() => setModalOpen(true)}
             className="p-1.5 rounded-lg bg-brand-blue/10 text-brand-blue hover:bg-brand-blue hover:text-white transition-all">
             <Plus className="w-4 h-4" />
@@ -206,7 +206,7 @@ export default function TodoList({ compact = false }) {
     <div className="animate-fade-in">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h2 className="text-2xl font-display font-bold text-white">Task Board</h2>
+          <h2 className="text-2xl font-display font-bold text-black dark:text-white">Task Board</h2>
           <p className="text-sm text-slate-500 mt-1">
             {todos.length} tasks · {pending.length} pending · {ongoing.length} in progress
           </p>

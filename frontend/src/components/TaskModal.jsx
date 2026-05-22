@@ -41,8 +41,7 @@ export default function TaskModal({ isOpen, onClose, onSubmit }) {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-50 flex items-center justify-center px-4"
-          style={{ background: 'rgba(5,10,24,0.8)', backdropFilter: 'blur(8px)' }}
+          className="fixed inset-0 z-50 flex items-center justify-center px-4 bg-slate-900/40 dark:bg-slate-950/80 backdrop-blur-sm"
           onClick={onClose}
         >
           <motion.div
@@ -50,14 +49,13 @@ export default function TaskModal({ isOpen, onClose, onSubmit }) {
             animate={{ scale: 1, y: 0, opacity: 1 }}
             exit={{ scale: 0.95, y: 10, opacity: 0 }}
             transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-            className="glass w-full max-w-md p-6 relative"
-            style={{ border: '1px solid rgba(148,163,184,0.1)' }}
+            className="glass w-full max-w-md p-6 relative border border-slate-200 dark:border-white/[0.08]"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Close */}
             <button
               onClick={onClose}
-              className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-500 hover:text-white hover:bg-white/10 transition-all"
+              className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 transition-all"
             >
               <X className="w-4 h-4" />
             </button>
@@ -68,7 +66,7 @@ export default function TaskModal({ isOpen, onClose, onSubmit }) {
                 <Zap className="w-4 h-4 text-white" />
               </div>
               <div>
-                <h3 className="text-base font-display font-bold text-white">New Task</h3>
+                <h3 className="text-base font-display font-bold text-black dark:text-white">New Task</h3>
                 <p className="text-xs text-slate-500">Set details for your task</p>
               </div>
             </div>
@@ -85,8 +83,8 @@ export default function TaskModal({ isOpen, onClose, onSubmit }) {
                   onChange={(e) => setTask(e.target.value)}
                   placeholder="What do you need to do?"
                   autoFocus
-                  className="w-full bg-white/[0.04] border border-white/[0.08] rounded-xl py-3 px-4
-                    text-sm text-white placeholder-slate-600
+                  className="w-full bg-slate-100 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-xl py-3 px-4
+                    text-sm text-black dark:text-white placeholder-slate-400 dark:placeholder-slate-600
                     focus:outline-none focus:border-brand-blue/40 focus:shadow-[0_0_0_3px_rgba(59,130,246,0.08)]
                     transition-all"
                 />
@@ -105,8 +103,8 @@ export default function TaskModal({ isOpen, onClose, onSubmit }) {
                       onClick={() => setPriority(p.value)}
                       className="flex-1 py-2.5 rounded-xl text-xs font-semibold transition-all duration-200 border"
                       style={{
-                        background: priority === p.value ? p.bg : 'rgba(255,255,255,0.02)',
-                        borderColor: priority === p.value ? p.color + '40' : 'rgba(255,255,255,0.06)',
+                        background: priority === p.value ? p.bg : 'transparent',
+                        borderColor: priority === p.value ? p.color + '40' : 'rgba(148,163,184,0.15)',
                         color: priority === p.value ? p.color : '#64748b',
                       }}
                     >
@@ -126,19 +124,17 @@ export default function TaskModal({ isOpen, onClose, onSubmit }) {
                     type="date"
                     value={deadlineDate}
                     onChange={(e) => setDeadlineDate(e.target.value)}
-                    className="bg-white/[0.04] border border-white/[0.08] rounded-xl py-2.5 px-3
-                      text-sm text-white
-                      focus:outline-none focus:border-brand-blue/40 transition-all
-                      [color-scheme:dark]"
+                    className="bg-slate-100 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-xl py-2.5 px-3
+                      text-sm text-black dark:text-white
+                      focus:outline-none focus:border-brand-blue/40 transition-all"
                   />
                   <input
                     type="time"
                     value={deadlineTime}
                     onChange={(e) => setDeadlineTime(e.target.value)}
-                    className="bg-white/[0.04] border border-white/[0.08] rounded-xl py-2.5 px-3
-                      text-sm text-white
-                      focus:outline-none focus:border-brand-blue/40 transition-all
-                      [color-scheme:dark]"
+                    className="bg-slate-100 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-xl py-2.5 px-3
+                      text-sm text-black dark:text-white
+                      focus:outline-none focus:border-brand-blue/40 transition-all"
                   />
                 </div>
               </div>

@@ -74,11 +74,11 @@ export default function CalendarView() {
     <div className="animate-fade-in">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h2 className="text-2xl font-display font-bold text-white">Calendar</h2>
+          <h2 className="text-2xl font-display font-bold text-black dark:text-white">Calendar</h2>
           <p className="text-sm text-slate-500 mt-1">Tasks and sessions at a glance</p>
         </div>
         <button onClick={goToday}
-          className="text-xs font-semibold px-4 py-2 rounded-xl bg-white/[0.04] border border-white/[0.06] text-slate-400
+          className="text-xs font-semibold px-4 py-2 rounded-xl bg-slate-100 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.06] text-slate-600 dark:text-slate-400
             hover:bg-brand-blue/10 hover:text-brand-blue hover:border-brand-blue/20 transition-all">
           Today
         </button>
@@ -89,13 +89,13 @@ export default function CalendarView() {
         <div className="lg:col-span-2 glass p-6">
           {/* Month nav */}
           <div className="flex items-center justify-between mb-6">
-            <button onClick={prevMonth} className="p-2 rounded-lg hover:bg-white/[0.06] text-slate-400 hover:text-white transition-all">
+            <button onClick={prevMonth} className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-white/[0.06] text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all">
               <ChevronLeft className="w-5 h-5" />
             </button>
-            <h3 className="text-lg font-display font-bold text-white">
+            <h3 className="text-lg font-display font-bold text-black dark:text-white">
               {MONTHS[month]} {year}
             </h3>
-            <button onClick={nextMonth} className="p-2 rounded-lg hover:bg-white/[0.06] text-slate-400 hover:text-white transition-all">
+            <button onClick={nextMonth} className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-white/[0.06] text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all">
               <ChevronRight className="w-5 h-5" />
             </button>
           </div>
@@ -127,10 +127,10 @@ export default function CalendarView() {
                   className={`
                     relative aspect-square rounded-xl text-sm font-medium transition-all duration-200
                     flex flex-col items-center justify-center gap-1
-                    ${!cell.inMonth ? 'text-slate-800 cursor-default' : 'cursor-pointer hover:bg-white/[0.04]'}
+                    ${!cell.inMonth ? 'text-slate-300 dark:text-slate-850 cursor-default' : 'cursor-pointer hover:bg-slate-100 dark:hover:bg-white/[0.04]'}
                     ${isToday ? 'bg-brand-blue/10 text-brand-blue font-bold ring-1 ring-brand-blue/20' : ''}
-                    ${isSelected && !isToday ? 'bg-white/[0.06] text-white ring-1 ring-white/10' : ''}
-                    ${cell.inMonth && !isToday && !isSelected ? 'text-slate-300' : ''}
+                    ${isSelected && !isToday ? 'bg-slate-200 dark:bg-white/[0.06] text-black dark:text-white ring-1 ring-slate-300 dark:ring-white/10' : ''}
+                    ${cell.inMonth && !isToday && !isSelected ? 'text-slate-600 dark:text-slate-300' : ''}
                   `}
                 >
                   <span>{cell.day}</span>
@@ -148,7 +148,7 @@ export default function CalendarView() {
           </div>
 
           {/* Legend */}
-          <div className="flex items-center gap-5 mt-5 pt-4 border-t border-white/[0.04]">
+          <div className="flex items-center gap-5 mt-5 pt-4 border-t border-slate-200 dark:border-white/[0.04]">
             <div className="flex items-center gap-1.5 text-[10px] text-slate-500">
               <div className="w-2 h-2 rounded-full bg-amber-400" /> Task deadline
             </div>
@@ -163,7 +163,7 @@ export default function CalendarView() {
 
         {/* Sidebar: selected day events */}
         <div className="glass p-6">
-          <h4 className="text-sm font-semibold text-white mb-1">
+          <h4 className="text-sm font-semibold text-black dark:text-white mb-1">
             {selectedDate
               ? new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
               : 'Select a date'}
@@ -202,7 +202,7 @@ export default function CalendarView() {
                         }
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm text-slate-200 leading-snug">{evt.title}</p>
+                        <p className="text-sm text-black dark:text-slate-200 leading-snug">{evt.title}</p>
                         <div className="flex items-center gap-2 mt-1.5">
                           {evt.time && (
                             <span className="text-[10px] text-slate-500 flex items-center gap-1">

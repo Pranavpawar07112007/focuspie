@@ -1,5 +1,12 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
-import { startSession as apiStart, stopSession as apiStop, sessionStatus, WS_ALERTS } from '../api';
+import { 
+  startSession as apiStart, 
+  stopSession as apiStop, 
+  pauseSession as apiPause, 
+  resumeSession as apiResume, 
+  sessionStatus, 
+  WS_ALERTS 
+} from '../api';
 
 const SessionContext = createContext(null);
 
@@ -9,17 +16,90 @@ export function SessionProvider({ children }) {
   const [timeLeft, setTimeLeft] = useState(25 * 60);
   const [totalTime, setTotalTime] = useState(25 * 60);
   const [alert, setAlert] = useState(null);
+  
+  // Pomodoro and Custom Mode states
+  const [timerMode, setTimerMode] = useState('standard'); // 'standard', 'pomodoro'
+  const [pomodoroState, setPomodoroState] = useState('focus'); // 'focus', 'short_break', 'long_break'
+  const [pomodoroCycle, setPomodoroCycle] = useState(1);
+  const [onBreak, setOnBreak] = useState(false);
+
   const wsRef = useRef(null);
   const intervalRef = useRef(null);
+
+  // Request browser notification permissions on mount
+  useEffect(() => {
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+  }, []);
 
   // Poll backend session status on mount to sync across pages
   useEffect(() => {
     sessionStatus().then((s) => {
       if (s.is_active) {
         setIsActive(true);
+        setOnBreak(s.on_break);
+        if (s.on_break) {
+          setIsPaused(true);
+        }
       }
     }).catch(() => {});
   }, []);
+
+  // Handle Pomodoro automatic transitions when timer ends
+  const handlePomodoroTransition = useCallback(async () => {
+    // Play transition sound using browser synthesizer
+    try {
+      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const oscillator = audioCtx.createOscillator();
+      const gainNode = audioCtx.createGain();
+      oscillator.connect(gainNode);
+      gainNode.connect(audioCtx.destination);
+      oscillator.type = 'sine';
+      oscillator.frequency.setValueAtTime(880, audioCtx.currentTime); // A5 note
+      gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+      oscillator.start();
+      oscillator.stop(audioCtx.currentTime + 0.3);
+    } catch (e) {}
+
+    if (pomodoroState === 'focus') {
+      // Focus ended -> Start Break
+      if (pomodoroCycle >= 4) {
+        setPomodoroState('long_break');
+        setOnBreak(true);
+        setTimeLeft(15 * 60);
+        setTotalTime(15 * 60);
+        try { await apiPause(); } catch {}
+        if (Notification.permission === 'granted') {
+          new Notification("Long Break Started ☕", { body: "Amazing work completing 4 focus cycles! Take a 15-minute long break." });
+        }
+      } else {
+        setPomodoroState('short_break');
+        setOnBreak(true);
+        setTimeLeft(5 * 60);
+        setTotalTime(5 * 60);
+        try { await apiPause(); } catch {}
+        if (Notification.permission === 'granted') {
+          new Notification("Short Break Started ⚡", { body: "Time for a 5-minute break. Stretch and relax!" });
+        }
+      }
+    } else {
+      // Break ended -> Start Focus
+      setPomodoroState('focus');
+      setOnBreak(false);
+      setTimeLeft(25 * 60);
+      setTotalTime(25 * 60);
+      if (pomodoroState === 'long_break') {
+        setPomodoroCycle(1);
+      } else {
+        setPomodoroCycle((c) => c + 1);
+      }
+      try { await apiResume(); } catch {}
+      if (Notification.permission === 'granted') {
+        new Notification("Focus Session Started 🎯", { body: "Break's over! Let's get back to work." });
+      }
+    }
+  }, [pomodoroState, pomodoroCycle]);
 
   // Timer countdown
   useEffect(() => {
@@ -28,35 +108,65 @@ export function SessionProvider({ children }) {
         setTimeLeft((t) => t - 1);
       }, 1000);
     } else if (timeLeft === 0 && isActive) {
-      stop();
+      if (timerMode === 'pomodoro') {
+        handlePomodoroTransition();
+      } else {
+        stop();
+      }
     }
     return () => clearInterval(intervalRef.current);
-  }, [isActive, isPaused, timeLeft]);
+  }, [isActive, isPaused, timeLeft, timerMode, handlePomodoroTransition]);
 
   // WebSocket connection for distraction alerts
   useEffect(() => {
+    let active = true;
     function connect() {
+      if (!active) return;
       wsRef.current = new WebSocket(WS_ALERTS);
       wsRef.current.onmessage = (e) => {
+        if (!active) return;
         const data = JSON.parse(e.data);
         if (data.type === 'distraction') {
           setAlert(data);
-          setTimeout(() => setAlert(null), 6000);
+          // Set to 15 seconds to match the return timer duration perfectly
+          setTimeout(() => {
+            if (active) setAlert(null);
+          }, 15000);
         }
       };
       wsRef.current.onclose = () => {
-        setTimeout(connect, 3000); // auto-reconnect
+        if (active) {
+          setTimeout(connect, 3000); // auto-reconnect
+        }
       };
     }
     connect();
-    return () => { if (wsRef.current) wsRef.current.close(); };
+    
+    // Clean up to prevent WebSocket memory leak and duplicate reconnect loop
+    return () => { 
+      active = false;
+      if (wsRef.current) {
+        wsRef.current.onclose = null; // Unbind callback first
+        wsRef.current.close(); 
+      }
+    };
   }, []);
 
-  const start = useCallback(async (minutes = 25) => {
+  const start = useCallback(async (minutes = 25, mode = 'standard') => {
     try {
       if (!isActive) await apiStart();
-      setTotalTime(minutes * 60);
-      setTimeLeft(minutes * 60);
+      setTimerMode(mode);
+      setPomodoroState('focus');
+      setOnBreak(false);
+      
+      if (mode === 'pomodoro') {
+        setTotalTime(25 * 60);
+        setTimeLeft(25 * 60);
+        setPomodoroCycle(1);
+      } else {
+        setTotalTime(minutes * 60);
+        setTimeLeft(minutes * 60);
+      }
       setIsActive(true);
       setIsPaused(false);
     } catch (e) {
@@ -66,8 +176,19 @@ export function SessionProvider({ children }) {
     }
   }, [isActive]);
 
-  const pause = useCallback(() => setIsPaused(true), []);
-  const resume = useCallback(() => setIsPaused(false), []);
+  const pause = useCallback(async () => {
+    try {
+      await apiPause();
+    } catch (e) {}
+    setIsPaused(true);
+  }, []);
+
+  const resume = useCallback(async () => {
+    try {
+      await apiResume();
+    } catch (e) {}
+    setIsPaused(false);
+  }, []);
 
   const stop = useCallback(async () => {
     try {
@@ -75,6 +196,10 @@ export function SessionProvider({ children }) {
     } catch {}
     setIsActive(false);
     setIsPaused(false);
+    setOnBreak(false);
+    setTimerMode('standard');
+    setPomodoroState('focus');
+    setPomodoroCycle(1);
     setTimeLeft(25 * 60);
     setTotalTime(25 * 60);
   }, [isActive]);
@@ -86,7 +211,8 @@ export function SessionProvider({ children }) {
   return (
     <SessionContext.Provider value={{
       isActive, isPaused, timeLeft, totalTime, progress, alert,
-      start, pause, resume, stop, dismissAlert,
+      timerMode, pomodoroState, pomodoroCycle, onBreak,
+      start, pause, resume, stop, dismissAlert, setTimeLeft, setTotalTime
     }}>
       {children}
     </SessionContext.Provider>

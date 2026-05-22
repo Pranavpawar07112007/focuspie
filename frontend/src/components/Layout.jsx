@@ -1,8 +1,9 @@
 import React from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
-import { LayoutDashboard, ListChecks, BarChart3, CalendarDays, Zap } from 'lucide-react';
+import { LayoutDashboard, ListChecks, BarChart3, CalendarDays, Zap, Sun, Moon } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useSession } from '../context/SessionContext';
+import { useTheme } from '../context/ThemeContext';
 
 const navItems = [
   { to: '/',         icon: LayoutDashboard, label: 'Dashboard' },
@@ -19,7 +20,7 @@ function NavItem({ to, icon: Icon, label }) {
         `group flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-300 relative overflow-hidden
         ${isActive
           ? 'bg-brand-blue/10 text-brand-blue'
-          : 'text-slate-400 hover:text-white hover:bg-white/[0.04]'
+          : 'text-slate-600 hover:text-black dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/[0.04]'
         }`
       }
     >
@@ -42,10 +43,11 @@ function NavItem({ to, icon: Icon, label }) {
 
 export default function Layout({ children }) {
   const { isActive: sessionActive } = useSession();
+  const { theme, toggleTheme } = useTheme();
   const location = useLocation();
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex h-screen overflow-hidden bg-white dark:bg-[#050a18] transition-colors duration-300">
 
       {/* ── Ambient Background ──────────────────────── */}
       <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
@@ -55,7 +57,7 @@ export default function Layout({ children }) {
       </div>
 
       {/* ── Sidebar ─────────────────────────────────── */}
-      <aside className="w-[240px] flex-shrink-0 flex flex-col h-full border-r border-white/[0.06] bg-[#050a18]/80 backdrop-blur-xl relative z-10">
+      <aside className="w-[240px] flex-shrink-0 flex flex-col h-full border-r border-slate-200 dark:border-white/[0.06] bg-white/80 dark:bg-[#050a18]/80 backdrop-blur-xl relative z-10 transition-colors duration-300">
 
         {/* Logo */}
         <div className="px-6 pt-7 pb-6">
@@ -63,7 +65,7 @@ export default function Layout({ children }) {
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-blue to-brand-cyan flex items-center justify-center shadow-lg shadow-brand-blue/20">
               <Zap className="w-4 h-4 text-white" />
             </div>
-            <span className="text-lg font-display font-bold tracking-tight text-white">
+            <span className="text-lg font-display font-bold tracking-tight text-black dark:text-white">
               FOCUSPIE
             </span>
           </div>
@@ -84,12 +86,20 @@ export default function Layout({ children }) {
           <div className={`flex items-center gap-2 px-4 py-3 rounded-xl text-xs font-medium transition-colors
             ${sessionActive
               ? 'bg-brand-emerald/10 text-brand-emerald'
-              : 'bg-white/[0.03] text-slate-500'
+              : 'bg-slate-100 dark:bg-white/[0.03] text-slate-600 dark:text-slate-400'
             }`}
           >
-            <div className={`w-2 h-2 rounded-full ${sessionActive ? 'bg-brand-emerald animate-pulse-glow' : 'bg-slate-600'}`} />
+            <div className={`w-2 h-2 rounded-full ${sessionActive ? 'bg-brand-emerald animate-pulse-glow' : 'bg-slate-400 dark:bg-slate-600'}`} />
             {sessionActive ? 'Session Active' : 'No Active Session'}
           </div>
+
+          <button
+            onClick={toggleTheme}
+            className="mt-4 w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-xs font-medium bg-slate-100 dark:bg-white/[0.03] text-black dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-white/[0.06] transition-all"
+          >
+            {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+            {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
+          </button>
         </div>
       </aside>
 

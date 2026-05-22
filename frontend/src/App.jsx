@@ -1,6 +1,7 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { SessionProvider } from './context/SessionContext';
+import { ThemeProvider } from './context/ThemeContext';
 import Layout from './components/Layout';
 import DistractionOverlay from './components/DistractionOverlay';
 import FocusTimer from './components/FocusTimer';
@@ -13,7 +14,7 @@ function DashboardPage() {
   return (
     <div className="space-y-6 animate-fade-in">
       <div>
-        <h2 className="text-2xl font-display font-bold text-white">Dashboard</h2>
+        <h2 className="text-2xl font-display font-bold text-black dark:text-white">Dashboard</h2>
         <p className="text-sm text-slate-500 mt-1">Your productivity command center</p>
       </div>
 
@@ -56,17 +57,19 @@ function CalendarPage() {
 function App() {
   return (
     <BrowserRouter>
-      <SessionProvider>
-        <Layout>
-          <Routes>
-            <Route path="/" element={<DashboardPage />} />
-            <Route path="/tasks" element={<TasksPage />} />
-            <Route path="/insights" element={<InsightsPage />} />
-            <Route path="/calendar" element={<CalendarPage />} />
-          </Routes>
-        </Layout>
-        <DistractionOverlay />
-      </SessionProvider>
+      <ThemeProvider>
+        <SessionProvider>
+          <Layout>
+            <Routes>
+              <Route path="/" element={<DashboardPage />} />
+              <Route path="/tasks" element={<TasksPage />} />
+              <Route path="/insights" element={<InsightsPage />} />
+              <Route path="/calendar" element={<CalendarPage />} />
+            </Routes>
+          </Layout>
+          <DistractionOverlay />
+        </SessionProvider>
+      </ThemeProvider>
     </BrowserRouter>
   );
 }

@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
   /* ── Brand Palette ─────────────────────────────────── */
   --color-brand-blue: #3B82F6;
@@ -14,9 +16,9 @@
   --color-brand-emerald: #34d399;
 
   /* ── Typography ────────────────────────────────────── */
-  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
-  --font-display: 'Space Grotesk', ui-sans-serif, sans-serif;
-  --font-handwritten: 'Gloria Hallelujah', cursive;
+  --font-sans: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-display: 'Outfit', ui-sans-serif, sans-serif;
+  --font-handwritten: 'Caveat', cursive;
 
   /* ── Custom Animations ─────────────────────────────── */
   --animate-float: float 6s ease-in-out infinite;
@@ -67,10 +69,16 @@
   body {
     margin: 0;
     font-family: var(--font-sans);
-    background: #050a18;
-    color: #e2e8f0;
+    background: #ffffff;
+    color: #000000;
     overflow-x: hidden;
     min-height: 100vh;
+    transition: background-color 0.3s ease, color 0.3s ease;
+  }
+
+  .dark body {
+    background: #050a18;
+    color: #ffffff;
   }
 
   ::selection {
@@ -84,17 +92,34 @@
 
   /* Glass morphism card */
   .glass {
-    background: rgba(15, 23, 42, 0.6);
+    background: rgba(255, 255, 255, 0.7);
     backdrop-filter: blur(20px) saturate(1.2);
     -webkit-backdrop-filter: blur(20px) saturate(1.2);
-    border: 1px solid rgba(148, 163, 184, 0.08);
+    border: 1px solid rgba(0, 0, 0, 0.05);
     border-radius: 16px;
+    box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.05);
+  }
+
+  .dark .glass {
+    background: rgba(15, 23, 42, 0.6);
+    border: 1px solid rgba(148, 163, 184, 0.08);
+    box-shadow: none;
   }
 
   .glass-hover {
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   }
   .glass-hover:hover {
+    background: rgba(255, 255, 255, 0.9);
+    border-color: rgba(59, 130, 246, 0.2);
+    box-shadow:
+      0 0 0 1px rgba(59, 130, 246, 0.1),
+      0 8px 32px -8px rgba(0, 0, 0, 0.1),
+      0 0 60px -20px rgba(59, 130, 246, 0.1);
+    transform: translateY(-2px);
+  }
+
+  .dark .glass-hover:hover {
     background: rgba(15, 23, 42, 0.75);
     border-color: rgba(59, 130, 246, 0.2);
     box-shadow:

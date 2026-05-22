@@ -5,6 +5,7 @@ from sqlalchemy import func
 from datetime import datetime, timedelta
 import asyncio
 import json
+from contextlib import asynccontextmanager
 
 from database import engine, Base, get_db, SessionLocal
 from models import (
@@ -17,7 +18,13 @@ from tracker import app_state, start_tracker
 # Create DB tables
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="FocusPie API")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Start background tracker thread exactly once safely on startup
+    start_tracker(SessionLocal)
+    yield
+
+app = FastAPI(title="FocusPie API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -26,9 +33,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Start background tracker
-start_tracker(SessionLocal)
 
 
 # ─── Helpers ─────────────────────────────────────────────────────────
@@ -92,6 +96,8 @@ def start_session(db: Session = Depends(get_db)):
     db.refresh(new_session)
     app_state.active_session_id = new_session.id
     app_state.is_tracking = True
+    app_state.distraction_attempts = 0 # Reset distraction attempts on new session
+    app_state.on_break = False # Reset break state
     return new_session
 
 @app.post("/api/session/stop", response_model=SessionStopResponse)
@@ -110,13 +116,234 @@ def stop_session(db: Session = Depends(get_db)):
     db.refresh(session)
     app_state.is_tracking = False
     app_state.active_session_id = None
+    app_state.on_break = False
     return session
+
+@app.post("/api/session/pause")
+def pause_session():
+    if not app_state.is_tracking:
+        raise HTTPException(status_code=400, detail="No active session to pause")
+    app_state.on_break = True
+    return {"message": "Session paused"}
+
+@app.post("/api/session/resume")
+def resume_session():
+    if not app_state.is_tracking:
+        raise HTTPException(status_code=400, detail="No active session to resume")
+    app_state.on_break = False
+    return {"message": "Session resumed"}
 
 @app.get("/api/session/status")
 def session_status():
     return {
         "is_active": app_state.is_tracking,
         "session_id": app_state.active_session_id,
+        "on_break": app_state.on_break,
+    }
+
+
+# ─── Granular Session Explorer Endpoints ─────────────────────────────
+
+@app.get("/api/sessions")
+def get_all_sessions(db: Session = Depends(get_db)):
+    """Get all completed focus sessions with summary statistics."""
+    sessions = db.query(FocusSession).filter(FocusSession.status == "completed").order_by(FocusSession.start_time.desc()).all()
+    
+    result = []
+    for s in sessions:
+        logs = db.query(WindowLog).filter(WindowLog.session_id == s.id).all()
+        total_logs = len(logs)
+        distraction_logs = sum(1 for l in logs if l.is_distraction)
+        focus_score = round(((total_logs - distraction_logs) / max(total_logs, 1)) * 100) if total_logs > 0 else 0
+        
+        result.append({
+            "id": s.id,
+            "start_time": s.start_time.isoformat() if s.start_time else None,
+            "end_time": s.end_time.isoformat() if s.end_time else None,
+            "duration_minutes": round((s.total_duration or 0) / 60, 1),
+            "focus_score": focus_score,
+            "total_logs": total_logs,
+            "distraction_logs": distraction_logs
+        })
+    return result
+
+@app.get("/api/sessions/{session_id}")
+def get_session_details(session_id: int, db: Session = Depends(get_db)):
+    """Get detailed minute-binned timeline, top distractions, AI classification and incidents for a specific session."""
+    session = db.query(FocusSession).filter(FocusSession.id == session_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+        
+    logs = db.query(WindowLog).filter(WindowLog.session_id == session_id).all()
+    total_logs = len(logs)
+    distraction_logs = sum(1 for l in logs if l.is_distraction)
+    focus_logs = total_logs - distraction_logs
+    
+    focus_score = round((focus_logs / max(total_logs, 1)) * 100) if total_logs > 0 else 0
+    
+    # Group distractions
+    distractions_count = {}
+    for log in logs:
+        if log.is_distraction:
+            key = log.application_name or "Unknown"
+            distractions_count[key] = distractions_count.get(key, 0) + 1
+            
+    top_distractions = [
+        {"name": k, "minutes": round(v / 60, 1), "seconds": v}
+        for k, v in sorted(distractions_count.items(), key=lambda x: x[1], reverse=True)[:6]
+    ]
+    
+    # Granular minute bins
+    minute_bins = {}
+    for log in logs:
+        elapsed = int((log.timestamp - session.start_time).total_seconds())
+        minute_idx = elapsed // 60
+        minute_key = f"{minute_idx}m"
+        if minute_idx not in minute_bins:
+            minute_bins[minute_idx] = {"Focus": 0, "Distraction": 0}
+        if log.is_distraction:
+            minute_bins[minute_idx]["Distraction"] += 1
+        else:
+            minute_bins[minute_idx]["Focus"] += 1
+            
+    timeline = [
+        {"time": f"{k}m", "Focus": round(v["Focus"] / 60, 1), "Distraction": round(v["Distraction"] / 60, 1)}
+        for k, v in sorted(minute_bins.items())
+    ]
+    
+    # Detailed distraction incidents
+    incidents = []
+    for log in logs:
+        if log.is_distraction:
+            incidents.append({
+                "time": log.timestamp.strftime("%H:%M:%S"),
+                "title": log.window_title,
+                "app": log.application_name
+            })
+            
+    # AI Classification of window logs
+    from ml_service import activity_classifier
+    cat_counts = {}
+    for log in logs:
+        cat, _ = activity_classifier.classify(log.window_title)
+        cat_counts[cat] = cat_counts.get(cat, 0) + 1
+        
+    ai_categories = [
+        {"name": k, "value": v}
+        for k, v in cat_counts.items() if v > 0
+    ]
+    
+    return {
+        "id": session.id,
+        "start_time": session.start_time.isoformat() if session.start_time else None,
+        "end_time": session.end_time.isoformat() if session.end_time else None,
+        "duration_minutes": round((session.total_duration or 0) / 60, 1),
+        "focus_score": focus_score,
+        "summary": {
+            "total_minutes": round((session.total_duration or 0) / 60, 1),
+            "focus_minutes": round(focus_logs / 60, 1),
+            "distraction_minutes": round(distraction_logs / 60, 1),
+            "focus_score": focus_score
+        },
+        "top_distractions": top_distractions,
+        "timeline": timeline,
+    }
+
+@app.delete("/api/sessions/{session_id}")
+def delete_session(session_id: int, db: Session = Depends(get_db)):
+    """Delete a focus session and cascading log data."""
+    session = db.query(FocusSession).filter(FocusSession.id == session_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    # Cascade delete logs
+    db.query(WindowLog).filter(WindowLog.session_id == session_id).delete()
+    db.delete(session)
+    db.commit()
+    return {"message": "Session deleted successfully"}
+
+
+# ─── Machine Learning Predictor Endpoints ────────────────────────────
+
+@app.get("/api/ml/predict")
+def predict_focus_forecast(db: Session = Depends(get_db)):
+    """Predict expected focus score and return productivity categorization and trends."""
+    sessions = db.query(FocusSession).filter(FocusSession.status == "completed").all()
+    
+    session_data = []
+    for s in sessions:
+        logs = db.query(WindowLog).filter(WindowLog.session_id == s.id).all()
+        if not logs:
+            continue
+        distraction_logs = sum(1 for l in logs if l.is_distraction)
+        score = round(((len(logs) - distraction_logs) / len(logs)) * 100)
+        session_data.append({
+            "start_time": s.start_time,
+            "focus_score": score
+        })
+        
+    from ml_service import focus_predictor, activity_classifier
+    focus_predictor.load_historical_data(session_data)
+    predicted_score, advice = focus_predictor.predict()
+    
+    # Calculate 24h expected focus curve using Circular KNN circular distances
+    circadian_curve = []
+    base_time = datetime.now()
+    for h in range(24):
+        test_time = base_time.replace(hour=h, minute=0, second=0, microsecond=0)
+        score_h, _ = focus_predictor.predict(target_time=test_time)
+        circadian_curve.append({
+            "hour": f"{h:02d}:00",
+            "Expected Focus": score_h
+        })
+
+    # Calculate global categorization distribution
+    all_logs = db.query(WindowLog).all()
+    cat_counts = {"Work": 0, "Entertainment": 0, "Social Media": 0, "Communication": 0, "Utilities": 0}
+    for l in all_logs:
+        if l.window_title:
+            cat, _ = activity_classifier.classify(l.window_title)
+            cat_counts[cat] = cat_counts.get(cat, 0) + 1
+            
+    # Calculate historical focus score trend by date (last 7 dates)
+    daily_scores = {}
+    for s in sessions:
+        logs = db.query(WindowLog).filter(WindowLog.session_id == s.id).all()
+        if not logs:
+            continue
+        distraction_logs = sum(1 for l in logs if l.is_distraction)
+        score = round(((len(logs) - distraction_logs) / len(logs)) * 100)
+        
+        date_str = s.start_time.strftime("%b %d")
+        if date_str not in daily_scores:
+            daily_scores[date_str] = []
+        daily_scores[date_str].append(score)
+        
+    trend = []
+    for date, scores in daily_scores.items():
+        trend.append({
+            "date": date,
+            "Score": round(sum(scores) / len(scores))
+        })
+        
+    # Sort trend chronological-like
+    def sort_trend_key(item):
+        try:
+            return datetime.strptime(f"{datetime.now().year} {item['date']}", "%Y %b %d")
+        except:
+            return datetime.now()
+            
+    trend = sorted(trend, key=sort_trend_key)[-7:]
+    
+    return {
+        "predicted_score": predicted_score,
+        "advice": advice,
+        "trend": trend,
+        "distribution": [
+            {"name": k, "value": v}
+            for k, v in cat_counts.items() if v > 0
+        ],
+        "circadian_curve": circadian_curve
     }
 
 

@@ -37,7 +37,7 @@ export default function DistractionOverlay() {
               </div>
             </div>
 
-            <h1 className="text-6xl md:text-7xl font-display font-black uppercase tracking-tighter leading-[0.9] text-gradient-rose mb-6">
+            <h1 className="text-6xl md:text-7xl font-display font-bold uppercase tracking-tighter leading-[0.9] text-gradient-rose mb-6">
               Get Back<br/>To Work
             </h1>
 

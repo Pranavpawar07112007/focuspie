@@ -146,15 +146,15 @@ def test_insights():
     print("  PASSED!\n")
 
 if __name__ == "__main__":
-    print("\n🧪 FocusPie Automated Test Suite\n" + "="*40 + "\n")
+    print("\n[TEST] FocusPie Automated Test Suite\n" + "="*40 + "\n")
     try:
         test_todos_with_priority_deadline()
         test_session()
         test_calendar()
         test_insights()
         print("="*40)
-        print("✅ All tests passed!")
+        print("[SUCCESS] All tests passed!")
     except AssertionError as e:
-        print(f"❌ Test failed: {e}")
+        print(f"[FAIL] Test failed: {e}")
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"[ERROR] Error: {e}")
