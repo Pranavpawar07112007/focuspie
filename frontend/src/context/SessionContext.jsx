@@ -21,6 +21,7 @@ export function SessionProvider({ children }) {
   const [timerMode, setTimerMode] = useState('standard'); // 'standard', 'pomodoro'
   const [pomodoroState, setPomodoroState] = useState('focus'); // 'focus', 'short_break', 'long_break'
   const [pomodoroCycle, setPomodoroCycle] = useState(1);
+  const [pomodoroIntervals, setPomodoroIntervals] = useState(4);
   const [onBreak, setOnBreak] = useState(false);
 
   const wsRef = useRef(null);
@@ -64,7 +65,7 @@ export function SessionProvider({ children }) {
 
     if (pomodoroState === 'focus') {
       // Focus ended -> Start Break
-      if (pomodoroCycle >= 4) {
+      if (pomodoroCycle >= pomodoroIntervals) {
         setPomodoroState('long_break');
         setOnBreak(true);
         setTimeLeft(15 * 60);
@@ -99,7 +100,7 @@ export function SessionProvider({ children }) {
         new Notification("Focus Session Started 🎯", { body: "Break's over! Let's get back to work." });
       }
     }
-  }, [pomodoroState, pomodoroCycle]);
+  }, [pomodoroState, pomodoroCycle, pomodoroIntervals]);
 
   // Timer countdown
   useEffect(() => {
@@ -211,8 +212,8 @@ export function SessionProvider({ children }) {
   return (
     <SessionContext.Provider value={{
       isActive, isPaused, timeLeft, totalTime, progress, alert,
-      timerMode, pomodoroState, pomodoroCycle, onBreak,
-      start, pause, resume, stop, dismissAlert, setTimeLeft, setTotalTime
+      timerMode, pomodoroState, pomodoroCycle, pomodoroIntervals, onBreak,
+      start, pause, resume, stop, dismissAlert, setTimeLeft, setTotalTime, setPomodoroIntervals
     }}>
       {children}
     </SessionContext.Provider>

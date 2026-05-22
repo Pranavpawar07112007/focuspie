@@ -1,13 +1,16 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  BarChart, Bar, PieChart, Pie, Cell, LineChart, Line
+  BarChart, Bar, PieChart, Pie, Cell, LineChart, Line, ComposedChart, Scatter
 } from 'recharts';
 import { 
   TrendingUp, TrendingDown, Clock, Target, Activity, Calendar, 
-  ChevronRight, Brain, Info, Sparkles, Coffee, ShieldAlert, Award, ArrowLeft
+  ChevronRight, Brain, Info, Sparkles, Coffee, ShieldAlert, Award, ArrowLeft, Trash2,
+  X, AlertTriangle
 } from 'lucide-react';
-import { getInsights, getSessions, getSession, getMlForecast } from '../api';
+import { motion, AnimatePresence } from 'framer-motion';
+import { getInsights, getSessions, getSession, getMlForecast, deleteSession } from '../api';
 
 const COLORS = ['#3B82F6', '#a855f7', '#fb7185', '#34d399', '#f59e0b', '#ec4899'];
 const CATEGORY_COLORS = {
@@ -66,8 +69,33 @@ export default function Insights({ compact = false }) {
   const [selectedSession, setSelectedSession] = useState(null);
   const [loadingSession, setLoadingSession] = useState(false);
 
-  const loadData = async () => {
-    setLoading(true);
+  // Delete confirm modal states
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [sessionToDeleteId, setSessionToDeleteId] = useState(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState(null);
+
+  const handleDeleteSession = async () => {
+    if (!sessionToDeleteId) return;
+    setIsDeleting(true);
+    setDeleteError(null);
+    try {
+      await deleteSession(sessionToDeleteId);
+      await loadData(true); // Silent reload after delete
+      setSelectedSessionId(null);
+      setSelectedSession(null);
+      setIsDeleteModalOpen(false);
+      setSessionToDeleteId(null);
+    } catch (err) {
+      console.error("Failed to delete session", err);
+      setDeleteError("Failed to delete session. Please ensure the backend server is running and try again.");
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const loadData = async (isSilent = false) => {
+    if (!isSilent) setLoading(true);
     try {
       const [insightsRes, sessionsRes, mlRes] = await Promise.all([
         getInsights().catch(() => null),
@@ -80,13 +108,32 @@ export default function Insights({ compact = false }) {
     } catch (e) {
       console.error("Error loading insights data", e);
     } finally {
-      setLoading(false);
+      if (!isSilent) setLoading(false);
     }
   };
 
+  // Mount effect for initial data load
   useEffect(() => {
-    loadData();
+    loadData(false);
   }, []);
+
+  // Background polling for dynamic updates (every 6 seconds)
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      await loadData(true);
+      
+      if (selectedSessionId) {
+        try {
+          const details = await getSession(selectedSessionId);
+          setSelectedSession(details);
+        } catch (e) {
+          console.error("Background refresh error for session details:", e);
+        }
+      }
+    }, 6000);
+
+    return () => clearInterval(interval);
+  }, [selectedSessionId]);
 
   const handleSelectSession = async (id) => {
     setSelectedSessionId(id);
@@ -388,6 +435,116 @@ export default function Insights({ compact = false }) {
             </div>
 
           </div>
+
+          {/* AI Predictive Intelligence Section */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+            
+            {/* KNN Circadian Focus Wave */}
+            <div className="glass p-6 relative overflow-hidden group">
+              <div className="flex justify-between items-center mb-1">
+                <h4 className="text-sm font-semibold text-black dark:text-white flex items-center gap-1.5">
+                  <Brain className="w-4 h-4 text-brand-blue" />
+                  ML Circadian Focus Wave
+                </h4>
+                <span className="text-[9px] bg-brand-blue/10 text-brand-blue px-2 py-0.5 rounded-full font-bold font-sans">KNN Model</span>
+              </div>
+              <p className="text-xs text-slate-500 mb-6">Predicted hourly focus probability levels across a standard 24-hour circadian day</p>
+              
+              <div style={{ width: '100%', height: 220 }}>
+                {mlData && mlData.circadian_curve?.length > 0 ? (
+                  <ResponsiveContainer>
+                    <AreaChart data={mlData.circadian_curve} margin={{ top: 5, right: 5, left: -25, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="gCircadian" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.4} />
+                          <stop offset="95%" stopColor="#8B5CF6" stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.06)" vertical={false} />
+                      <XAxis dataKey="hour" stroke="#94a3b8" fontSize={9} tickLine={false} axisLine={false} />
+                      <YAxis domain={[0, 100]} stroke="#94a3b8" fontSize={9} tickLine={false} axisLine={false} />
+                      <Tooltip content={<CustomTooltip />} />
+                      <Area type="monotone" dataKey="Expected Focus" stroke="#3B82F6" strokeWidth={2.5} fill="url(#gCircadian)" name="Expected Focus" />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="flex items-center justify-center h-full text-slate-500 text-xs italic">
+                    Circadian waveform calibrating based on your focus history...
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Linear Regression Scatter Chart */}
+            <div className="glass p-6">
+              <div className="flex justify-between items-center mb-1">
+                <h4 className="text-sm font-semibold text-black dark:text-white flex items-center gap-1.5">
+                  <Activity className="w-4 h-4 text-brand-emerald" />
+                  Focus Decay Regression
+                </h4>
+                <span className="text-[9px] bg-brand-emerald/10 text-brand-emerald px-2 py-0.5 rounded-full font-bold font-sans">Linear Regression</span>
+              </div>
+              <p className="text-xs text-slate-500 mb-6">Correlation analysis showing how session length influences focus efficiency</p>
+              
+              <div style={{ width: '100%', height: 220 }}>
+                {sessions.length >= 2 ? (() => {
+                  const pts = sessions.map(s => ({ x: s.duration_minutes, y: s.focus_score, name: `Session #${s.id}` }));
+                  // Simple regression calculations
+                  const n = pts.length;
+                  let sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
+                  for (const p of pts) {
+                    sumX += p.x;
+                    sumY += p.y;
+                    sumXY += p.x * p.y;
+                    sumXX += p.x * p.x;
+                  }
+                  const denominator = n * sumXX - sumX * sumX;
+                  const slope = denominator !== 0 ? (n * sumXY - sumX * sumY) / denominator : 0;
+                  const intercept = (sumY - slope * sumX) / n;
+                  
+                  const minX = Math.min(...pts.map(p => p.x));
+                  const maxX = Math.max(...pts.map(p => p.x));
+                  
+                  // Generate regression trend line points
+                  const regressionLine = [
+                    { x: Math.floor(minX), y: Math.round(slope * minX + intercept) },
+                    { x: Math.ceil(maxX), y: Math.round(slope * maxX + intercept) }
+                  ];
+
+                  // Correlation label
+                  const rDirection = slope > 0 ? "positive correlation (increasing session length improves focus)" : slope < 0 ? "negative correlation (focus decays with longer session lengths)" : "flat correlation (session length has no effect on focus)";
+                  const equation = `Focus% = ${slope.toFixed(2)} * Duration + ${intercept.toFixed(1)}`;
+                  
+                  return (
+                    <div className="h-full flex flex-col justify-between">
+                      <div className="h-[175px]">
+                        <ResponsiveContainer>
+                          <ComposedChart margin={{ top: 5, right: 10, left: -25, bottom: 0 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.06)" />
+                            <XAxis type="number" dataKey="x" name="Duration" unit="m" stroke="#94a3b8" fontSize={9} tickLine={false} axisLine={false} domain={['dataMin - 5', 'dataMax + 5']} />
+                            <YAxis type="number" dataKey="y" name="Focus" unit="%" stroke="#94a3b8" fontSize={9} tickLine={false} axisLine={false} domain={[0, 105]} />
+                            <Tooltip cursor={{ strokeDasharray: '3 3' }} />
+                            <Scatter name="Sessions" data={pts} fill="#10B981" fillOpacity={0.7} />
+                            <Line name="ML Trend" data={regressionLine} type="monotone" dataKey="y" stroke="#F59E0B" strokeWidth={2.5} dot={false} activeDot={false} />
+                          </ComposedChart>
+                        </ResponsiveContainer>
+                      </div>
+                      <div className="text-[10px] text-slate-500 font-medium bg-slate-50 dark:bg-white/[0.02] border border-slate-200/40 dark:border-white/[0.04] p-1.5 rounded-lg text-center mt-1 flex flex-col gap-0.5">
+                        <span className="font-mono text-amber-500 font-bold">{equation}</span>
+                        <span>Trend shows a <strong className="text-black dark:text-slate-200 font-bold">{rDirection}</strong></span>
+                      </div>
+                    </div>
+                  );
+                })() : (
+                  <div className="flex flex-col items-center justify-center h-full text-slate-500 text-xs italic gap-1">
+                    <Info className="w-4 h-4 text-slate-400" />
+                    Complete at least two different focus sessions to generate regression correlation charts!
+                  </div>
+                )}
+              </div>
+            </div>
+
+          </div>
         </>
       ) : (
         /* ==================== SESSION EXPLORER VIEW ==================== */
@@ -448,8 +605,40 @@ export default function Insights({ compact = false }) {
                 <p className="text-xs text-slate-500 font-semibold tracking-wider uppercase animate-pulse">Extracting Granular Logs...</p>
               </div>
             ) : selectedSession ? (
-              <div className="space-y-6">
+              <div className="space-y-6 animate-fade-in">
                 
+                {/* Session Header with Delete Action */}
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white/50 dark:bg-slate-900/40 p-4 rounded-xl border border-slate-200/50 dark:border-white/[0.04] shadow-sm">
+                  <div>
+                    <h3 className="text-base font-display font-bold text-black dark:text-white flex items-center gap-2">
+                      Focus Session #{selectedSession.id}
+                      <span className={`text-[10px] tracking-wider uppercase font-semibold px-2 py-0.5 rounded-full font-sans ${
+                        selectedSession.focus_score >= 80 
+                          ? 'bg-brand-emerald/10 text-brand-emerald border border-brand-emerald/20' 
+                          : selectedSession.focus_score >= 50 
+                            ? 'bg-amber-500/10 text-amber-500 border border-amber-500/20'
+                            : 'bg-brand-rose/10 text-brand-rose border border-brand-rose/20'
+                      }`}>
+                        {selectedSession.focus_score >= 80 ? 'Optimal Focus' : selectedSession.focus_score >= 50 ? 'Moderate Focus' : 'Poor Focus'}
+                      </span>
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      {selectedSession.start_time ? new Date(selectedSession.start_time).toLocaleString(undefined, { weekday: 'long', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Unknown start time'}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setSessionToDeleteId(selectedSession.id);
+                      setDeleteError(null);
+                      setIsDeleteModalOpen(true);
+                    }}
+                    className="w-full sm:w-auto px-4 py-2 rounded-lg text-brand-rose hover:bg-brand-rose/10 border border-brand-rose/20 hover:border-brand-rose/40 transition-all duration-200 flex items-center justify-center gap-1.5 text-xs font-bold uppercase tracking-wider cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Delete Session
+                  </button>
+                </div>
+
                 {/* Granular statistics bar */}
                 <div className="glass p-6 grid grid-cols-2 md:grid-cols-4 gap-4 bg-gradient-to-r from-slate-900/5 via-transparent to-transparent">
                   <div className="text-center border-r border-slate-200/50 dark:border-white/[0.04]">
@@ -585,44 +774,64 @@ export default function Insights({ compact = false }) {
 
                 </div>
 
-                {/* Detailed Incident Log Table */}
+                {/* Chronological Activity Feed */}
                 <div className="glass p-6">
                   <div className="flex items-center gap-2 mb-1">
-                    <ShieldAlert className="w-4 h-4 text-brand-rose" />
-                    <h4 className="text-sm font-semibold text-black dark:text-white">Precise Distraction Logs</h4>
+                    <Activity className="w-4 h-4 text-brand-blue" />
+                    <h4 className="text-sm font-semibold text-black dark:text-white">Chronological Session Timeline</h4>
                   </div>
-                  <p className="text-xs text-slate-500 mb-4">Chronological feed of specific website tabs and applications opened during this session</p>
+                  <p className="text-xs text-slate-500 mb-6">Grouped activity blocks tracking active processes and site tabs chronologically</p>
 
-                  <div className="overflow-x-auto max-h-[300px] overflow-y-auto pr-1.5 custom-scroll">
-                    {selectedSession.incidents?.length > 0 ? (
-                      <table className="w-full text-left text-xs text-slate-700 dark:text-slate-400 border-collapse">
-                        <thead>
-                          <tr className="border-b border-slate-200/50 dark:border-white/[0.04] text-[10px] uppercase font-bold text-slate-500 tracking-wider">
-                            <th className="py-2.5 px-3 w-20">Time</th>
-                            <th className="py-2.5 px-3 w-32">App/Process</th>
-                            <th className="py-2.5 px-3">Specific Activity / Website Tab</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {selectedSession.incidents.map((inc, i) => (
-                            <tr key={i} className="border-b border-slate-100 dark:border-white/[0.02] hover:bg-slate-50 dark:hover:bg-white/[0.01] transition-colors">
-                              <td className="py-2.5 px-3 font-mono font-medium text-slate-600 dark:text-slate-500">{inc.time}</td>
-                              <td className="py-2.5 px-3">
-                                <span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-white/[0.05] text-[10px] text-slate-700 dark:text-slate-300 font-semibold border border-slate-200/20">
-                                  {inc.app}
+                  <div className="relative pl-6 border-l border-slate-200/50 dark:border-white/[0.06] ml-3 space-y-6 max-h-[380px] overflow-y-auto pr-1.5 custom-scroll">
+                    {selectedSession.activity_timeline?.length > 0 ? (
+                      selectedSession.activity_timeline.map((act, i) => (
+                        <div key={i} className="relative group">
+                          {/* Timeline node dot */}
+                          <div className={`absolute -left-[31px] top-1.5 w-4 h-4 rounded-full border-2 transition-all duration-300 flex items-center justify-center
+                            ${act.is_distraction 
+                              ? 'bg-brand-rose/10 border-brand-rose shadow-[0_0_8px_rgba(244,63,94,0.3)] group-hover:scale-110' 
+                              : 'bg-brand-emerald/10 border-brand-emerald shadow-[0_0_8px_rgba(52,211,153,0.3)] group-hover:scale-110'
+                            }`}
+                          >
+                            <div className={`w-1.5 h-1.5 rounded-full ${act.is_distraction ? 'bg-brand-rose' : 'bg-brand-emerald'}`} />
+                          </div>
+
+                          {/* Activity Card */}
+                          <div className="glass glass-hover p-4 relative overflow-hidden transition-all duration-300">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 mb-2">
+                              {/* Left side: App + Time range */}
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border
+                                  ${act.is_distraction 
+                                    ? 'bg-brand-rose/10 text-brand-rose border-brand-rose/20' 
+                                    : 'bg-brand-blue/10 text-brand-blue border-brand-blue/20'
+                                  }`}
+                                >
+                                  {act.app}
                                 </span>
-                              </td>
-                              <td className="py-2.5 px-3 font-medium text-black dark:text-white truncate max-w-[280px]" title={inc.title}>
-                                {inc.title || 'Untitled Activity'}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                                <span className="text-[10px] font-mono text-slate-500 font-medium">
+                                  {act.start_time} — {act.end_time}
+                                </span>
+                              </div>
+                              
+                              {/* Right side: Duration Badge */}
+                              <span className="self-start sm:self-auto text-[10px] font-mono font-bold bg-slate-100 dark:bg-white/[0.05] border border-slate-200/50 dark:border-white/[0.04] px-2 py-0.5 rounded text-slate-700 dark:text-slate-300">
+                                {act.duration_formatted}
+                              </span>
+                            </div>
+
+                            {/* Representative Window Title */}
+                            <h5 className="text-xs font-semibold text-black dark:text-white leading-relaxed font-sans select-all" title={act.title}>
+                              {act.title}
+                            </h5>
+                          </div>
+                        </div>
+                      ))
                     ) : (
-                      <div className="text-center py-8 text-slate-500 text-xs italic flex items-center justify-center gap-1.5">
-                        <Award className="w-4 h-4 text-brand-emerald animate-bounce" />
-                        Flawless Session! Absolutely zero distraction incidents logged.
+                      <div className="text-center py-10 text-slate-500 text-xs italic flex flex-col items-center justify-center gap-2 pl-0 ml-0 border-none relative">
+                        <div className="absolute -left-[31px] top-1/2 -translate-y-1/2 w-4 h-4 rounded-full border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900" />
+                        <Sparkles className="w-5 h-5 text-amber-500 animate-pulse" />
+                        <span>Timeline logs rendering. Start focusing to generate timeline logs!</span>
                       </div>
                     )}
                   </div>
@@ -639,6 +848,109 @@ export default function Insights({ compact = false }) {
           </div>
 
         </div>
+      )}
+
+      {typeof document !== 'undefined' && document.body && createPortal(
+        <AnimatePresence>
+          {isDeleteModalOpen && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[100] flex items-center justify-center px-4 bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-md"
+              onClick={() => setIsDeleteModalOpen(false)}
+            >
+              <motion.div
+                initial={{ scale: 0.92, y: 20, opacity: 0 }}
+                animate={{ scale: 1, y: 0, opacity: 1 }}
+                exit={{ scale: 0.95, y: 10, opacity: 0 }}
+                transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+                className="glass w-full max-w-md p-6 relative border border-brand-rose/20 dark:border-brand-rose/30 shadow-2xl overflow-hidden text-center"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {/* Soft red glow backing */}
+                <div className="absolute -top-10 -left-10 w-32 h-32 bg-brand-rose/10 rounded-full blur-2xl pointer-events-none" />
+                <div className="absolute -bottom-10 -right-10 w-32 h-32 bg-brand-rose/5 rounded-full blur-2xl pointer-events-none" />
+
+                {/* Close Button */}
+                <button
+                  onClick={() => setIsDeleteModalOpen(false)}
+                  className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 transition-all"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+
+                {/* Header Icon */}
+                <div className="mx-auto w-12 h-12 rounded-full bg-brand-rose/10 flex items-center justify-center mb-4 border border-brand-rose/20 animate-pulse">
+                  <AlertTriangle className="w-6 h-6 text-brand-rose" />
+                </div>
+
+                {/* Header */}
+                <h3 className="text-lg font-display font-bold text-black dark:text-white mb-2">
+                  Delete Focus Session?
+                </h3>
+                <p className="text-xs text-slate-500 mb-6 leading-relaxed">
+                  Are you sure you want to permanently delete <strong className="text-black dark:text-white font-bold">Focus Session #{sessionToDeleteId}</strong> and all of its associated tracked activity logs? This action is irreversible.
+                </p>
+
+                {/* Error Alert Box */}
+                <AnimatePresence>
+                  {deleteError && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0, y: -10 }}
+                      animate={{ opacity: 1, height: 'auto', y: 0 }}
+                      exit={{ opacity: 0, height: 0, y: -10 }}
+                      className="bg-brand-rose/10 border border-brand-rose/25 rounded-xl p-3.5 mb-4 text-left flex gap-2.5 items-start overflow-hidden"
+                    >
+                      <AlertTriangle className="w-4.5 h-4.5 text-brand-rose shrink-0 mt-0.5 animate-pulse" />
+                      <div className="flex-1">
+                        <h6 className="text-[10px] font-bold text-brand-rose uppercase tracking-wider">Deletion Failed</h6>
+                        <p className="text-[11px] text-slate-700 dark:text-slate-300 mt-0.5 leading-relaxed font-semibold">
+                          {deleteError}
+                        </p>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
+                {/* Warning info panel */}
+                <div className="bg-brand-rose/5 border border-brand-rose/10 rounded-xl p-3.5 mb-6 text-left flex gap-2.5 items-start">
+                  <Info className="w-4 h-4 text-brand-rose shrink-0 mt-0.5" />
+                  <div>
+                    <h6 className="text-[10px] font-bold text-brand-rose uppercase tracking-wider">Cascading Recalculation</h6>
+                    <p className="text-[11px] text-slate-700 dark:text-slate-300 mt-0.5 leading-relaxed">
+                      All aggregate stats, hourly circadian graphs, focus velocity splines, linear regression trends, and activity distribution maps will immediately recalculate.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setIsDeleteModalOpen(false)}
+                    disabled={isDeleting}
+                    className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-white/[0.08] hover:bg-slate-50 dark:hover:bg-white/[0.03] transition-all duration-200 text-xs font-bold uppercase tracking-wider text-slate-500"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleDeleteSession}
+                    disabled={isDeleting}
+                    className="flex-1 py-2.5 rounded-xl bg-brand-rose text-white hover:bg-brand-rose/90 shadow-lg shadow-brand-rose/20 hover:shadow-brand-rose/35 active:scale-[0.98] transition-all duration-200 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 font-semibold"
+                  >
+                    {isDeleting ? (
+                      <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <Trash2 className="w-3.5 h-3.5" />
+                    )}
+                    {isDeleting ? 'Deleting...' : 'Delete'}
+                  </button>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>,
+        document.body
       )}
 
     </div>

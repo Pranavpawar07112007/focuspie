@@ -17,13 +17,15 @@ export default function FocusTimer() {
     timerMode, 
     pomodoroState, 
     pomodoroCycle, 
+    pomodoroIntervals,
     onBreak, 
     start, 
     pause, 
     resume, 
     stop, 
     setTimeLeft, 
-    setTotalTime 
+    setTotalTime,
+    setPomodoroIntervals
   } = useSession();
 
   const [activeTab, setActiveTab] = useState('standard'); // 'standard', 'pomodoro', 'custom'
@@ -58,9 +60,12 @@ export default function FocusTimer() {
     } else if (currentTab === 'custom') {
       start(customMinutes, 'standard');
     } else {
-      start(25, 'standard'); // Default to 25 for quick start
+      start(25, 'standard');
     }
   };
+
+  // Generate cycle dots array based on selected intervals
+  const cycleDots = Array.from({ length: pomodoroIntervals }, (_, i) => i + 1);
 
   return (
     <div className="glass p-8 md:p-10 flex flex-col items-center relative overflow-hidden">
@@ -164,8 +169,29 @@ export default function FocusTimer() {
       {/* Pomodoro Cycle Indicators */}
       {currentTab === 'pomodoro' && (
         <div className="flex flex-col items-center mb-6">
+          {/* Interval selector (only when NOT active) */}
+          {!isActive && (
+            <div className="flex items-center gap-3 mb-3">
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Intervals</span>
+              <div className="flex gap-1">
+                {[2, 3, 4, 5, 6, 8].map((n) => (
+                  <button
+                    key={n}
+                    onClick={() => setPomodoroIntervals(n)}
+                    className={`w-7 h-7 rounded-lg text-[11px] font-bold transition-all duration-200 border ${
+                      pomodoroIntervals === n
+                        ? 'bg-brand-blue/15 border-brand-blue text-brand-blue shadow-sm'
+                        : 'bg-slate-100 dark:bg-white/[0.04] border-slate-200 dark:border-white/[0.06] text-slate-500 hover:bg-brand-blue/10 hover:text-brand-blue hover:border-brand-blue/20'
+                    }`}
+                  >
+                    {n}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="flex gap-2.5 items-center mb-1">
-            {[1, 2, 3, 4].map((c) => {
+            {cycleDots.map((c) => {
               const isActiveCycle = isActive && pomodoroCycle === c;
               const isCompletedCycle = isActive && pomodoroCycle > c;
               return (
@@ -186,8 +212,8 @@ export default function FocusTimer() {
           </div>
           <span className="text-[10px] text-slate-500 font-medium">
             {isActive 
-              ? `${onBreak ? 'Resting' : 'Focusing'} on Interval ${pomodoroCycle} of 4`
-              : '4 Intervals (25m Focus / 5m Break)'
+              ? `${onBreak ? 'Resting' : 'Focusing'} on Interval ${pomodoroCycle} of ${pomodoroIntervals}`
+              : `${pomodoroIntervals} Intervals (25m Focus / 5m Break)`
             }
           </span>
         </div>

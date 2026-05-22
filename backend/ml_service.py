@@ -34,7 +34,13 @@ class ActivityClassifier:
                 "gitlab", "terminal", "powershell", "cmd", "stack", "overflow", "fastapi", 
                 "react", "vite", "npm", "node", "doc", "pdf", "classroom", "canvas", 
                 "excel", "word", "notion", "figma", "database", "sqlite", "db", "localhost", 
-                "tutorial", "stackoverflow", "rust", "cpp", "java", "coursera", "udemy"
+                "tutorial", "stackoverflow", "rust", "cpp", "java", "coursera", "udemy",
+                "google", "drive", "docs", "sheets", "slides", "search", "assignment",
+                "homework", "lecture", "notes", "study", "research", "thesis", "paper",
+                "module", "chapter", "exam", "quiz", "beta", "gamma", "distribution",
+                "probability", "statistics", "math", "calculate", "formula", "equation",
+                "normal", "exponential", "mean", "median", "deviation", "integral",
+                "focuspie", "antigravity", "ide", "workspace", "project"
             ],
             "Entertainment": [
                 "youtube", "netflix", "twitch", "spotify", "movie", "anime", "video", 
@@ -51,7 +57,9 @@ class ActivityClassifier:
             ],
             "Utilities": [
                 "explorer", "settings", "taskmgr", "desktop", "download", "calculator", 
-                "notepad", "control panel", "file explorer", "system", "properties"
+                "notepad", "control panel", "file explorer", "system", "properties",
+                "shellexperiencehost", "applicationframehost", "searchhost",
+                "new tab", "start menu", "taskbar", "action center", "notification"
             ]
         }
         

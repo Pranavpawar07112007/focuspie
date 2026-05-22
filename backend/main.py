@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, text
 from datetime import datetime, timedelta
 import asyncio
 import json
@@ -14,12 +14,84 @@ from models import (
     SessionResponse, SessionStopResponse,
 )
 from tracker import app_state, start_tracker
+import re
 
 # Create DB tables
 Base.metadata.create_all(bind=engine)
 
+def migrate_database_to_local_time(db):
+    """Automatically convert old UTC timestamps to local time exactly once on first startup."""
+    try:
+        db.execute(text("CREATE TABLE IF NOT EXISTS db_metadata (key TEXT PRIMARY KEY, value TEXT)"))
+        result = db.execute(text("SELECT value FROM db_metadata WHERE key = 'timezone_migrated'")).fetchone()
+        if result and result[0] == 'true':
+            return
+
+        from datetime import datetime
+        now = datetime.now()
+        utcnow = datetime.utcnow()
+        offset = now - utcnow
+        
+        offset_seconds = round(offset.total_seconds())
+        if abs(offset_seconds) < 60:
+            db.execute(text("INSERT OR REPLACE INTO db_metadata (key, value) VALUES ('timezone_migrated', 'true')"))
+            db.commit()
+            return
+
+        sign = "+" if offset_seconds >= 0 else "-"
+        offset_str = f"{sign}{abs(offset_seconds)} seconds"
+        
+        # Update focus_sessions
+        db.execute(
+            text("UPDATE focus_sessions SET start_time = datetime(start_time, :offset), end_time = datetime(end_time, :offset) WHERE start_time IS NOT NULL"),
+            {"offset": offset_str}
+        )
+        # Update window_logs
+        db.execute(
+            text("UPDATE window_logs SET timestamp = datetime(timestamp, :offset) WHERE timestamp IS NOT NULL"),
+            {"offset": offset_str}
+        )
+        # Update todos: created_at
+        db.execute(
+            text("UPDATE todos SET created_at = datetime(created_at, :offset) WHERE created_at IS NOT NULL"),
+            {"offset": offset_str}
+        )
+        
+        db.execute(text("INSERT OR REPLACE INTO db_metadata (key, value) VALUES ('timezone_migrated', 'true')"))
+        db.commit()
+        print(f"Successfully migrated existing database UTC timestamps to local time using offset: {offset_str}")
+    except Exception as e:
+        print(f"Error migrating database timestamps: {e}")
+        db.rollback()
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Run automatic timezone migration first
+    db = SessionLocal()
+    try:
+        migrate_database_to_local_time(db)
+    finally:
+        db.close()
+
+    # Clean up orphan active sessions on startup
+    db = SessionLocal()
+    try:
+        active_sessions = db.query(FocusSession).filter(FocusSession.status == "active").all()
+        for s in active_sessions:
+            logs = db.query(WindowLog).filter(WindowLog.session_id == s.id).order_by(WindowLog.timestamp.desc()).all()
+            if logs:
+                s.status = "completed"
+                s.end_time = logs[0].timestamp
+                s.total_duration = int((s.end_time - s.start_time).total_seconds())
+            else:
+                db.delete(s)
+        db.commit()
+    except Exception as e:
+        print(f"Error cleaning up orphan sessions: {e}")
+        db.rollback()
+    finally:
+        db.close()
+
     # Start background tracker thread exactly once safely on startup
     start_tracker(SessionLocal)
     yield
@@ -43,7 +115,7 @@ def compute_deadline_warning(deadline):
     """Return a warning string if deadline is close or overdue."""
     if not deadline:
         return None
-    now = datetime.utcnow()
+    now = datetime.now()
     delta = deadline - now
     if delta.total_seconds() < 0:
         return "overdue"
@@ -70,7 +142,7 @@ def todo_to_response(todo):
 
 def smart_sort(todos):
     """Sort todos by: overdue first, then priority, then deadline proximity."""
-    now = datetime.utcnow()
+    now = datetime.now()
 
     def sort_key(t):
         p = PRIORITY_ORDER.get(t.priority, 1)
@@ -90,7 +162,7 @@ def smart_sort(todos):
 def start_session(db: Session = Depends(get_db)):
     if app_state.is_tracking:
         raise HTTPException(status_code=400, detail="A session is already active")
-    new_session = FocusSession(start_time=datetime.utcnow(), status="active")
+    new_session = FocusSession(start_time=datetime.now(), status="active")
     db.add(new_session)
     db.commit()
     db.refresh(new_session)
@@ -109,7 +181,7 @@ def stop_session(db: Session = Depends(get_db)):
     ).first()
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
-    session.end_time = datetime.utcnow()
+    session.end_time = datetime.now()
     session.total_duration = int((session.end_time - session.start_time).total_seconds())
     session.status = "completed"
     db.commit()
@@ -167,6 +239,99 @@ def get_all_sessions(db: Session = Depends(get_db)):
         })
     return result
 
+# ─── Smart Name Extraction Helpers ───────────────────────────────────
+
+BROWSER_PROCESSES = {"chrome.exe", "msedge.exe", "firefox.exe", "brave.exe", "opera.exe", "applicationframehost.exe"}
+
+# Known browser title suffixes (including invisible unicode variants)
+BROWSER_SUFFIXES = [
+    " - Google Chrome", " - Microsoft\u200b Edge", " - Microsoft Edge",
+    " - Mozilla Firefox", " - Brave", " - Opera", " - Vivaldi",
+]
+
+DISTRACTION_KEYWORDS = [
+    "YouTube", "Netflix", "Twitch", "Facebook", "Instagram",
+    "Reddit", "Twitter", "x.com", "Pinterest", "LinkedIn",
+    "WhatsApp", "Discord", "Spotify", "Steam", "Roblox", "TikTok",
+]
+
+SYSTEM_PROCESS_NAMES = {
+    "shellexperiencehost.exe": "Windows Shell",
+    "applicationframehost.exe": "UWP App",
+    "searchhost.exe": "Windows Search",
+    "explorer.exe": "File Explorer",
+    "taskmgr.exe": "Task Manager",
+    "systemsettings.exe": "Settings",
+}
+
+def clean_window_title(title):
+    if not title:
+        return "Untitled Activity"
+    # Remove browser suffix if there is one (handle invisible unicode too)
+    for suffix in BROWSER_SUFFIXES:
+        if title.endswith(suffix):
+            title = title[:-len(suffix)]
+    # Also strip with a regex for edge cases with zero-width chars
+    title = re.sub(r'\s*-\s*(Google Chrome|Microsoft\u200b? Edge|Mozilla Firefox|Brave|Opera)\s*$', '', title)
+    return title.strip()
+
+def extract_specific_name(application_name, window_title):
+    """Extract the most specific, human-readable app/website name from DB log data.
+    Works retroactively on old data that may have raw process names stored."""
+    app_raw = application_name or ""
+    title = window_title or ""
+    app_lower = app_raw.lower().strip()
+
+    # 1. If already a specific name (not a process .exe), use it directly
+    if app_lower and not app_lower.endswith(".exe"):
+        # Already specific — could be "FocusPie", "YouTube", etc.
+        # But also check if it's an absurdly long browser title stored as app name
+        if len(app_raw) > 60:
+            # It's a full window title stored as app_name — extract the site part
+            cleaned = clean_window_title(app_raw)
+            if " - " in cleaned:
+                parts = cleaned.split(" - ")
+                return parts[-1].strip() if len(parts[-1].strip()) > 2 else parts[0].strip()
+            return cleaned[:50]
+        return app_raw
+
+    # 2. Check if it's a browser process
+    if app_lower in BROWSER_PROCESSES:
+        title_lower = title.lower()
+        # Check for known distraction keywords first
+        for kw in DISTRACTION_KEYWORDS:
+            if kw.lower() in title_lower:
+                return kw
+        # Extract the site/page name from the title
+        cleaned = clean_window_title(title)
+        if cleaned and cleaned != "Untitled Activity":
+            if " - " in cleaned:
+                parts = cleaned.split(" - ")
+                # Return the last part (usually the site/app name)
+                site = parts[-1].strip()
+                if len(site) > 2:
+                    return site
+                return parts[0].strip()
+            return cleaned[:50] if len(cleaned) > 50 else cleaned
+        return app_raw.replace(".exe", "").capitalize()
+
+    # 3. Known system process friendly names
+    if app_lower in SYSTEM_PROCESS_NAMES:
+        return SYSTEM_PROCESS_NAMES[app_lower]
+
+    # 4. Generic fallback: strip .exe and capitalize
+    return app_raw.replace(".exe", "").capitalize() if app_raw else "Unknown"
+
+def get_normalized_app_key(application_name, window_title):
+    """Get a normalized key for grouping consecutive activity logs.
+    Uses the specific name so consecutive logs of the same app group together
+    even if the full window title changes slightly."""
+    specific = extract_specific_name(application_name, window_title)
+    # For very long specific names (like full Google Search queries), normalize to first 40 chars
+    if len(specific) > 40:
+        return specific[:40]
+    return specific
+
 @app.get("/api/sessions/{session_id}")
 def get_session_details(session_id: int, db: Session = Depends(get_db)):
     """Get detailed minute-binned timeline, top distractions, AI classification and incidents for a specific session."""
@@ -174,7 +339,8 @@ def get_session_details(session_id: int, db: Session = Depends(get_db)):
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
         
-    logs = db.query(WindowLog).filter(WindowLog.session_id == session_id).all()
+    # Query sorted chronologically ascending
+    logs = db.query(WindowLog).filter(WindowLog.session_id == session_id).order_by(WindowLog.timestamp.asc()).all()
     total_logs = len(logs)
     distraction_logs = sum(1 for l in logs if l.is_distraction)
     focus_logs = total_logs - distraction_logs
@@ -185,7 +351,7 @@ def get_session_details(session_id: int, db: Session = Depends(get_db)):
     distractions_count = {}
     for log in logs:
         if log.is_distraction:
-            key = log.application_name or "Unknown"
+            key = extract_specific_name(log.application_name, log.window_title)
             distractions_count[key] = distractions_count.get(key, 0) + 1
             
     top_distractions = [
@@ -221,15 +387,18 @@ def get_session_details(session_id: int, db: Session = Depends(get_db)):
                 "app": log.application_name
             })
             
-    # AI Classification of window logs
+    # Compute chronological grouped activity timeline (both focus and distractions)
+    activity_timeline = _build_activity_timeline(logs)
+            
+    # AI Classification of window logs — show as minutes (logs are 1/sec)
     from ml_service import activity_classifier
     cat_counts = {}
     for log in logs:
-        cat, _ = activity_classifier.classify(log.window_title)
+        cat, _ = activity_classifier.classify(log.window_title, log.is_distraction)
         cat_counts[cat] = cat_counts.get(cat, 0) + 1
         
     ai_categories = [
-        {"name": k, "value": v}
+        {"name": k, "value": round(v / 60, 1)}
         for k, v in cat_counts.items() if v > 0
     ]
     
@@ -247,6 +416,9 @@ def get_session_details(session_id: int, db: Session = Depends(get_db)):
         },
         "top_distractions": top_distractions,
         "timeline": timeline,
+        "ai_categories": ai_categories,
+        "incidents": incidents,
+        "activity_timeline": activity_timeline
     }
 
 @app.delete("/api/sessions/{session_id}")
@@ -297,13 +469,15 @@ def predict_focus_forecast(db: Session = Depends(get_db)):
             "Expected Focus": score_h
         })
 
-    # Calculate global categorization distribution
+    # Calculate global categorization distribution — show as minutes (logs are 1/sec)
     all_logs = db.query(WindowLog).all()
     cat_counts = {"Work": 0, "Entertainment": 0, "Social Media": 0, "Communication": 0, "Utilities": 0}
     for l in all_logs:
         if l.window_title:
-            cat, _ = activity_classifier.classify(l.window_title)
+            cat, _ = activity_classifier.classify(l.window_title, l.is_distraction)
             cat_counts[cat] = cat_counts.get(cat, 0) + 1
+    # Convert raw log counts to minutes (tracker logs every 1 second)
+    cat_counts = {k: round(v / 60, 1) for k, v in cat_counts.items()}
             
     # Calculate historical focus score trend by date (last 7 dates)
     daily_scores = {}
@@ -464,12 +638,12 @@ def get_insights(db: Session = Depends(get_db)):
     distraction_seconds = sum(1 for l in logs if l.is_distraction)
     focus_seconds = sum(1 for l in logs if not l.is_distraction)
 
-    # Top distractions grouped by app
+    # Top distractions grouped by SPECIFIC website/app name (not generic process name)
     distractions_count = {}
     for log in logs:
         if log.is_distraction:
-            key = log.application_name or log.window_title or "Unknown"
-            key = key.replace(".exe", "").capitalize()
+            # Use smart extraction to get actual website name from window_title
+            key = extract_specific_name(log.application_name, log.window_title)
             distractions_count[key] = distractions_count.get(key, 0) + 1
 
     top_distractions = [
@@ -511,7 +685,7 @@ def get_insights(db: Session = Depends(get_db)):
         "pending": sum(1 for t in todos if t.status == "pending"),
         "ongoing": sum(1 for t in todos if t.status == "ongoing"),
         "completed": sum(1 for t in todos if t.status == "completed"),
-        "overdue": sum(1 for t in todos if t.deadline and t.deadline < datetime.utcnow() and t.status != "completed"),
+        "overdue": sum(1 for t in todos if t.deadline and t.deadline < datetime.now() and t.status != "completed"),
     }
 
     return {
@@ -528,6 +702,129 @@ def get_insights(db: Session = Depends(get_db)):
         "timeline": timeline,
         "top_distractions": top_distractions,
         "recent_sessions": recent_sessions,
+    }
+
+
+# ─── Activity Timeline Builder ───────────────────────────────────────
+
+def _build_activity_timeline(logs):
+    """Build a chronological grouped activity timeline from a list of WindowLog entries.
+    Groups consecutive logs from the same normalized app with the same distraction state."""
+    activity_timeline = []
+    if not logs:
+        return activity_timeline
+    
+    current_group = None
+    for log in logs:
+        app_name = log.application_name or "Unknown App"
+        window_title = log.window_title or "Untitled Window"
+        # Use normalized key for grouping (so "Google Search query A" and "Google Search query B" group together)
+        norm_key = get_normalized_app_key(app_name, window_title)
+        specific_name = extract_specific_name(app_name, window_title)
+        
+        if not current_group:
+            current_group = {
+                "norm_key": norm_key,
+                "specific_name": specific_name,
+                "is_distraction": log.is_distraction,
+                "start_time": log.timestamp,
+                "end_time": log.timestamp,
+                "titles": [window_title]
+            }
+        else:
+            time_gap = (log.timestamp - current_group["end_time"]).total_seconds()
+            # If same normalized app key, same distraction state, and gap is small (<= 15 seconds)
+            if (current_group["norm_key"] == norm_key and 
+                current_group["is_distraction"] == log.is_distraction and 
+                time_gap <= 15):
+                current_group["end_time"] = log.timestamp
+                current_group["titles"].append(window_title)
+            else:
+                # Save completed group
+                activity_timeline.append(_finalize_group(current_group))
+                # Start new group
+                current_group = {
+                    "norm_key": norm_key,
+                    "specific_name": specific_name,
+                    "is_distraction": log.is_distraction,
+                    "start_time": log.timestamp,
+                    "end_time": log.timestamp,
+                    "titles": [window_title]
+                }
+                
+    # Append the final group
+    if current_group:
+        activity_timeline.append(_finalize_group(current_group))
+    
+    return activity_timeline
+
+def _finalize_group(group):
+    """Convert a raw group dict into a response-ready timeline entry."""
+    duration_s = max(int((group["end_time"] - group["start_time"]).total_seconds()), 1)
+    
+    # Find most frequent title for display
+    title_counts = {}
+    for t in group["titles"]:
+        title_counts[t] = title_counts.get(t, 0) + 1
+    rep_title = max(title_counts, key=title_counts.get) if title_counts else "Unknown Activity"
+    rep_title = clean_window_title(rep_title)
+    
+    if duration_s < 60:
+        duration_fmt = f"{duration_s}s"
+    else:
+        mins = duration_s // 60
+        secs = duration_s % 60
+        duration_fmt = f"{mins}m {secs}s" if secs > 0 else f"{mins}m"
+    
+    return {
+        "app": group["specific_name"],
+        "title": rep_title,
+        "start_time": group["start_time"].strftime("%H:%M:%S"),
+        "end_time": group["end_time"].strftime("%H:%M:%S"),
+        "duration_seconds": duration_s,
+        "duration_formatted": duration_fmt,
+        "is_distraction": group["is_distraction"]
+    }
+
+
+# ─── Live Session Timeline ───────────────────────────────────────────
+
+@app.get("/api/session/live-timeline")
+def get_live_timeline(db: Session = Depends(get_db)):
+    """Get the activity timeline for the currently active session (real-time)."""
+    if not app_state.is_tracking or app_state.active_session_id is None:
+        return {"active": False, "timeline": [], "stats": None}
+    
+    session = db.query(FocusSession).filter(
+        FocusSession.id == app_state.active_session_id
+    ).first()
+    if not session:
+        return {"active": False, "timeline": [], "stats": None}
+    
+    logs = db.query(WindowLog).filter(
+        WindowLog.session_id == app_state.active_session_id
+    ).order_by(WindowLog.timestamp.asc()).all()
+    
+    total_logs = len(logs)
+    distraction_logs = sum(1 for l in logs if l.is_distraction)
+    focus_logs = total_logs - distraction_logs
+    
+    timeline = _build_activity_timeline(logs)
+    
+    elapsed_seconds = int((datetime.now() - session.start_time).total_seconds())
+    
+    return {
+        "active": True,
+        "session_id": session.id,
+        "elapsed_seconds": elapsed_seconds,
+        "elapsed_formatted": f"{elapsed_seconds // 60}m {elapsed_seconds % 60}s",
+        "stats": {
+            "total_logs": total_logs,
+            "focus_minutes": round(focus_logs / 60, 1),
+            "distraction_minutes": round(distraction_logs / 60, 1),
+            "focus_score": round((focus_logs / max(total_logs, 1)) * 100) if total_logs > 0 else 0,
+        },
+        "timeline": timeline[-20:]  # Last 20 activity groups for performance
     }
 
 

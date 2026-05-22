@@ -8,6 +8,7 @@ import FocusTimer from './components/FocusTimer';
 import TodoList from './components/TodoList';
 import Insights from './components/Insights';
 import CalendarView from './components/CalendarView';
+import LiveSessionTimeline from './components/LiveSessionTimeline';
 
 // ── Dashboard Page ─────────────────────────────────────
 function DashboardPage() {
@@ -24,9 +25,14 @@ function DashboardPage() {
           <FocusTimer />
         </div>
 
-        {/* Quick tasks — takes 2 cols */}
-        <div className="lg:col-span-2 glass p-6">
-          <TodoList compact />
+        {/* Column for tasks and live activity tracking timeline — takes 2 cols */}
+        <div className="lg:col-span-2 flex flex-col gap-6">
+          <div className="glass p-6">
+            <TodoList compact />
+          </div>
+          <div className="glass p-6">
+            <LiveSessionTimeline />
+          </div>
         </div>
       </div>
 

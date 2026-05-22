@@ -1,7 +1,7 @@
 import React from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { LayoutDashboard, ListChecks, BarChart3, CalendarDays, Zap, Sun, Moon } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useSession } from '../context/SessionContext';
 import { useTheme } from '../context/ThemeContext';
 
@@ -17,10 +17,10 @@ function NavItem({ to, icon: Icon, label }) {
     <NavLink
       to={to}
       className={({ isActive }) =>
-        `group flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-300 relative overflow-hidden
+        `group flex items-center gap-2 px-4 py-2 rounded-full text-xs font-semibold tracking-wide transition-all duration-300 relative overflow-visible
         ${isActive
-          ? 'bg-brand-blue/10 text-brand-blue'
-          : 'text-slate-600 hover:text-black dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/[0.04]'
+          ? 'text-brand-blue font-bold'
+          : 'text-slate-600 hover:text-black dark:text-slate-400 dark:hover:text-white hover:bg-slate-100/50 dark:hover:bg-white/[0.03]'
         }`
       }
     >
@@ -28,12 +28,12 @@ function NavItem({ to, icon: Icon, label }) {
         <>
           {isActive && (
             <motion.div
-              layoutId="nav-pill"
-              className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-r-full bg-brand-blue"
+              layoutId="nav-pill-top"
+              className="absolute inset-0 rounded-full bg-brand-blue/10 -z-10"
               transition={{ type: 'spring', stiffness: 350, damping: 30 }}
             />
           )}
-          <Icon className={`w-[18px] h-[18px] transition-transform duration-300 group-hover:scale-110 ${isActive ? 'text-brand-blue' : ''}`} />
+          <Icon className={`w-4 h-4 transition-transform duration-300 group-hover:scale-110 ${isActive ? 'text-brand-blue' : 'text-slate-400 dark:text-slate-500'}`} />
           <span>{label}</span>
         </>
       )}
@@ -47,7 +47,7 @@ export default function Layout({ children }) {
   const location = useLocation();
 
   return (
-    <div className="flex h-screen overflow-hidden bg-white dark:bg-[#050a18] transition-colors duration-300">
+    <div className="min-h-screen bg-white dark:bg-[#050a18] transition-colors duration-300">
 
       {/* ── Ambient Background ──────────────────────── */}
       <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
@@ -56,65 +56,95 @@ export default function Layout({ children }) {
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[40vw] h-[40vw] rounded-full bg-brand-cyan/[0.02] blur-[100px]" />
       </div>
 
-      {/* ── Sidebar ─────────────────────────────────── */}
-      <aside className="w-[240px] flex-shrink-0 flex flex-col h-full border-r border-slate-200 dark:border-white/[0.06] bg-white/80 dark:bg-[#050a18]/80 backdrop-blur-xl relative z-10 transition-colors duration-300">
-
-        {/* Logo */}
-        <div className="px-6 pt-7 pb-6">
+      {/* ── Top Floating Glassmorphic Navbar ─────────── */}
+      <header className="fixed top-4 left-4 right-4 z-40 h-16 glass backdrop-blur-xl border border-slate-200/50 dark:border-white/[0.06] rounded-full px-6 flex items-center justify-between shadow-lg">
+        
+        {/* Left Section: Logo & Status Badge */}
+        <div className="flex items-center gap-4">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-blue to-brand-cyan flex items-center justify-center shadow-lg shadow-brand-blue/20">
               <Zap className="w-4 h-4 text-white" />
             </div>
-            <span className="text-lg font-display font-bold tracking-tight text-black dark:text-white">
+            <span className="text-sm md:text-base font-display font-bold tracking-tight text-black dark:text-white">
               FOCUSPIE
             </span>
           </div>
+          
+          {/* Breathing Session Indicator */}
+          <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider transition-colors
+            ${sessionActive
+              ? 'bg-brand-emerald/10 text-brand-emerald border border-brand-emerald/20 shadow-[0_0_12px_rgba(52,211,153,0.15)]'
+              : 'bg-slate-100 dark:bg-white/[0.03] text-slate-500 dark:text-slate-400 border border-slate-200/50 dark:border-white/[0.04]'
+            }`}
+          >
+            <div className={`w-1.5 h-1.5 rounded-full ${sessionActive ? 'bg-brand-emerald animate-pulse-glow' : 'bg-slate-400 dark:bg-slate-600'}`} />
+            <span className="hidden sm:inline">{sessionActive ? 'Session Active' : 'Idle'}</span>
+          </div>
         </div>
 
-        {/* Nav */}
-        <nav className="flex-1 px-3 space-y-1">
-          <p className="px-4 mb-3 text-[10px] font-semibold tracking-[0.15em] uppercase text-slate-500">
-            Menu
-          </p>
+        {/* Center Section: Navigation Links Horizontal Layout */}
+        <nav className="hidden md:flex items-center gap-1 bg-slate-100/50 dark:bg-white/[0.02] border border-slate-200/20 dark:border-white/[0.03] p-1 rounded-full">
           {navItems.map((item) => (
             <NavItem key={item.to} {...item} />
           ))}
         </nav>
 
-        {/* Session status indicator */}
-        <div className="px-4 pb-6">
-          <div className={`flex items-center gap-2 px-4 py-3 rounded-xl text-xs font-medium transition-colors
-            ${sessionActive
-              ? 'bg-brand-emerald/10 text-brand-emerald'
-              : 'bg-slate-100 dark:bg-white/[0.03] text-slate-600 dark:text-slate-400'
-            }`}
-          >
-            <div className={`w-2 h-2 rounded-full ${sessionActive ? 'bg-brand-emerald animate-pulse-glow' : 'bg-slate-400 dark:bg-slate-600'}`} />
-            {sessionActive ? 'Session Active' : 'No Active Session'}
-          </div>
+        {/* Right Section: Mobile Menu Link & Rotating Theme Toggle Icon */}
+        <div className="flex items-center gap-3">
+          {/* Mobile Navigation */}
+          <nav className="flex md:hidden items-center gap-1">
+            {navItems.map((item) => {
+              const Icon = item.icon;
+              return (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  className={({ isActive }) =>
+                    `p-2 rounded-xl transition-all duration-300 relative
+                    ${isActive ? 'text-brand-blue bg-brand-blue/10' : 'text-slate-500 hover:text-black dark:hover:text-white'}`
+                  }
+                  title={item.label}
+                >
+                  <Icon className="w-4 h-4" />
+                </NavLink>
+              );
+            })}
+          </nav>
 
+          {/* Micro-Animated Premium Theme Toggle */}
           <button
             onClick={toggleTheme}
-            className="mt-4 w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-xs font-medium bg-slate-100 dark:bg-white/[0.03] text-black dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-white/[0.06] transition-all"
+            className="p-2.5 rounded-xl bg-slate-100 dark:bg-white/[0.03] border border-slate-200/50 dark:border-white/[0.04] text-slate-700 dark:text-slate-400 hover:text-brand-blue dark:hover:text-white hover:bg-slate-200 dark:hover:bg-white/[0.06] hover:scale-105 transition-all duration-300 relative overflow-hidden cursor-pointer"
+            title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
           >
-            {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-            {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.div
+                key={theme}
+                initial={{ y: -15, opacity: 0, rotate: -40 }}
+                animate={{ y: 0, opacity: 1, rotate: 0 }}
+                exit={{ y: 15, opacity: 0, rotate: 40 }}
+                transition={{ duration: 0.2, ease: "easeInOut" }}
+              >
+                {theme === 'dark' ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-brand-blue" />}
+              </motion.div>
+            </AnimatePresence>
           </button>
         </div>
-      </aside>
 
-      {/* ── Main Content ────────────────────────────── */}
-      <main className="flex-1 overflow-y-auto custom-scroll">
+      </header>
+
+      {/* ── Main Viewport Content ────────────────────── */}
+      <main className="pt-24 pb-8 px-4 md:px-8 max-w-[1400px] mx-auto min-h-screen">
         <motion.div
           key={location.pathname}
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3, ease: [0.25, 0.1, 0.25, 1] }}
-          className="p-8 max-w-[1400px] mx-auto"
         >
           {children}
         </motion.div>
       </main>
+      
     </div>
   );
 }

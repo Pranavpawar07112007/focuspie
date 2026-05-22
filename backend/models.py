@@ -26,7 +26,7 @@ class FocusSession(Base):
     __tablename__ = "focus_sessions"
 
     id = Column(Integer, primary_key=True, index=True)
-    start_time = Column(DateTime, default=datetime.utcnow)
+    start_time = Column(DateTime, default=datetime.now)
     end_time = Column(DateTime, nullable=True)
     total_duration = Column(Integer, default=0)  # seconds
     status = Column(String, default="active")     # active, completed, stopped
@@ -38,7 +38,7 @@ class WindowLog(Base):
     __tablename__ = "window_logs"
 
     id = Column(Integer, primary_key=True, index=True)
-    timestamp = Column(DateTime, default=datetime.utcnow)
+    timestamp = Column(DateTime, default=datetime.now)
     window_title = Column(String)
     application_name = Column(String)
     is_distraction = Column(Boolean, default=False)
@@ -56,7 +56,7 @@ class Todo(Base):
     priority = Column(String, default="medium")   # high, medium, low
     status = Column(String, default="pending")     # pending, ongoing, completed
     deadline = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.now)
 
 
 # ─── Pydantic Schemas ────────────────────────────────────────────────

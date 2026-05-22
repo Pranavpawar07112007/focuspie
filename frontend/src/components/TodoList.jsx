@@ -181,22 +181,111 @@ export default function TodoList({ compact = false }) {
   if (compact) {
     const urgentTasks = todos.filter(t => t.status !== 'completed').slice(0, 4);
     return (
-      <div>
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-display font-bold text-black dark:text-white">Tasks</h3>
-          <button onClick={() => setModalOpen(true)}
-            className="p-1.5 rounded-lg bg-brand-blue/10 text-brand-blue hover:bg-brand-blue hover:text-white transition-all">
-            <Plus className="w-4 h-4" />
+      <div className="flex flex-col h-full min-h-[300px]">
+        <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-100 dark:border-white/[0.05]">
+          <div className="flex items-center gap-2">
+            <ListChecks className="w-4 h-4 text-brand-blue" />
+            <h3 className="text-sm font-display font-bold text-black dark:text-white">Active Tasks</h3>
+          </div>
+          <button 
+            onClick={() => setModalOpen(true)}
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-brand-blue/10 hover:bg-brand-blue/20 text-brand-blue dark:text-brand-blue-light transition-all text-xs font-semibold cursor-pointer"
+          >
+            <Plus className="w-3.5 h-3.5" /> New Task
           </button>
         </div>
-        <div className="space-y-2">
-          {urgentTasks.length === 0 ? (
-            <p className="text-xs text-slate-600 text-center py-6">No pending tasks</p>
-          ) : urgentTasks.map(todo => (
-            <TaskCard key={todo.id} todo={todo} onToggle={handleToggle} onDelete={handleDelete} onStatusChange={handleStatusChange} />
-          ))}
-        </div>
-        <TaskModal isOpen={modalOpen} onClose={() => setModalOpen(false)} onSubmit={handleCreate} />
+
+        {loading ? (
+          <div className="flex-1 flex items-center justify-center py-8">
+            <div className="w-5 h-5 border-2 border-slate-300 border-t-brand-blue rounded-full animate-spin" />
+          </div>
+        ) : urgentTasks.length === 0 ? (
+          <div className="flex-1 flex flex-col items-center justify-center py-10 text-center">
+            <div className="w-10 h-10 rounded-full bg-brand-emerald/10 flex items-center justify-center mb-2 animate-bounce">
+              <Check className="w-5 h-5 text-brand-emerald" strokeWidth={3} />
+            </div>
+            <p className="text-xs font-semibold text-slate-700 dark:text-slate-300">All caught up!</p>
+            <p className="text-[10px] text-slate-400">Enjoy your focus time.</p>
+          </div>
+        ) : (
+          <div className="flex-1 space-y-2.5 overflow-y-auto max-h-[280px] pr-1 custom-scroll">
+            <AnimatePresence mode="popLayout">
+              {urgentTasks.map(t => {
+                const pc = PRIORITY_COLORS[t.priority] || PRIORITY_COLORS.medium;
+                const warning = t.deadline_warning ? WARNING_LABELS[t.deadline_warning] : null;
+                const WarningIcon = warning?.icon;
+                return (
+                  <motion.div
+                    key={t.id}
+                    layout
+                    initial={{ opacity: 0, y: 4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, x: -10 }}
+                    className="p-3 rounded-xl border border-slate-100 dark:border-white/[0.04] bg-slate-50/50 dark:bg-white/[0.01] hover:bg-slate-50 dark:hover:bg-white/[0.03] transition-all flex items-start gap-2.5 group"
+                  >
+                    {/* Checkbox */}
+                    <button
+                      onClick={() => handleToggle(t)}
+                      className="mt-0.5 w-[16px] h-[16px] rounded flex-shrink-0 flex items-center justify-center border transition-all cursor-pointer"
+                      style={{
+                        borderColor: t.status === 'completed' ? '#3B82F6' : 'rgba(148,163,184,0.3)',
+                        background: t.status === 'completed' ? '#3B82F6' : 'transparent',
+                      }}
+                    >
+                      {t.status === 'completed' && <Check className="w-2 text-white" strokeWidth={4} />}
+                    </button>
+
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-xs leading-snug transition-all ${
+                        t.status === 'completed' ? 'line-through text-slate-500' : 'text-slate-800 dark:text-slate-200'
+                      }`}>
+                        {t.task}
+                      </p>
+                      
+                      <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                        {/* Priority indicator */}
+                        <div className="flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: pc.dot }} />
+                          <span className="text-[9px] font-semibold text-slate-400 capitalize">{t.priority}</span>
+                        </div>
+
+                        {/* Deadline */}
+                        {t.deadline && (
+                          <span className="text-[9px] text-slate-400 flex items-center gap-0.5">
+                            <Clock className="w-2.5 h-2.5" />
+                            {new Date(t.deadline).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                          </span>
+                        )}
+
+                        {/* Deadline warning */}
+                        {warning && (
+                          <span className="text-[9px] font-semibold flex items-center gap-0.5 text-brand-rose animate-pulse">
+                            <WarningIcon className="w-2 h-2" />
+                            {warning.label}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Quick delete */}
+                    <button
+                      onClick={() => handleDelete(t.id)}
+                      className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-brand-rose/10 hover:text-brand-rose text-slate-400 dark:text-slate-600 transition-all cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </motion.div>
+                );
+              })}
+            </AnimatePresence>
+          </div>
+        )}
+
+        <AnimatePresence>
+          {modalOpen && (
+            <TaskModal isOpen={modalOpen} onClose={() => setModalOpen(false)} onSubmit={handleCreate} />
+          )}
+        </AnimatePresence>
       </div>
     );
   }
@@ -216,7 +305,7 @@ export default function TodoList({ compact = false }) {
             bg-gradient-to-r from-brand-blue to-brand-blue-light text-white
             shadow-lg shadow-brand-blue/20
             hover:shadow-brand-blue/35 hover:scale-[1.02]
-            active:scale-[0.98] transition-all duration-200">
+            active:scale-[0.98] transition-all duration-200 cursor-pointer">
           <Plus className="w-4 h-4" /> New Task
         </button>
       </div>
@@ -245,7 +334,11 @@ export default function TodoList({ compact = false }) {
         </div>
       )}
 
-      <TaskModal isOpen={modalOpen} onClose={() => setModalOpen(false)} onSubmit={handleCreate} />
+      <AnimatePresence>
+        {modalOpen && (
+          <TaskModal isOpen={modalOpen} onClose={() => setModalOpen(false)} onSubmit={handleCreate} />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

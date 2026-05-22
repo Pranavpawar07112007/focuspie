@@ -28,5 +28,8 @@ export const getMlForecast = () => api.get('/ml/predict').then(r => r.data);
 // ─── Calendar ─────────────────────────────────────────
 export const getCalendar = () => api.get('/calendar').then(r => r.data);
 
+// ─── Live Session Timeline ────────────────────────────
+export const getLiveTimeline = () => api.get('/session/live-timeline').then(r => r.data);
+
 // ─── WebSocket ────────────────────────────────────────
 export const WS_ALERTS = 'ws://localhost:8000/ws/alerts';
