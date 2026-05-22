@@ -5,6 +5,7 @@ from datetime import datetime
 
 class ActivityClassifier:
     def __init__(self):
+        import os
         # Bootstrap training data for standard categories
         self.categories = ["Work", "Entertainment", "Social Media", "Communication", "Utilities"]
         
@@ -15,7 +16,15 @@ class ActivityClassifier:
         # Vocabulary set
         self.vocab = set()
         
-        self._bootstrap_vocabulary()
+        # Persistent model path setup
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        self.model_path = os.path.join(base_dir, "activity_model.json")
+        
+        if os.path.exists(self.model_path):
+            self.load_model()
+        else:
+            self._bootstrap_vocabulary()
+            self.save_model()
 
     def _bootstrap_vocabulary(self):
         # Bootstrapping common keywords to make classification work perfectly out of the box
@@ -59,6 +68,31 @@ class ActivityClassifier:
         self.word_counts[category][word] = self.word_counts[category].get(word, 0) + weight
         self.total_word_counts[category] += weight
 
+    def save_model(self):
+        import json
+        try:
+            data = {
+                "word_counts": self.word_counts,
+                "total_word_counts": self.total_word_counts,
+                "vocab": list(self.vocab)
+            }
+            with open(self.model_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=4)
+        except Exception as e:
+            print(f"Failed to save ML model: {e}")
+
+    def load_model(self):
+        import json
+        try:
+            with open(self.model_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            self.word_counts = data.get("word_counts", {cat: {} for cat in self.categories})
+            self.total_word_counts = data.get("total_word_counts", {cat: 0 for cat in self.categories})
+            self.vocab = set(data.get("vocab", []))
+        except Exception as e:
+            print(f"Failed to load ML model, reverting to bootstrap: {e}")
+            self._bootstrap_vocabulary()
+
     def tokenize(self, title):
         if not title:
             return []
@@ -71,27 +105,52 @@ class ActivityClassifier:
         words = self.tokenize(title)
         for w in words:
             self.train_word(w, category, weight=1)
+        self.save_model()
 
-    def classify(self, title):
+    def classify(self, title, is_distraction=None):
         words = self.tokenize(title)
+        
+        # Filter categories based on distraction flag if provided
+        if is_distraction is True:
+            allowed_cats = ["Entertainment", "Social Media", "Communication"]
+            default_cat = "Entertainment"
+        elif is_distraction is False:
+            allowed_cats = ["Work", "Utilities"]
+            default_cat = "Work"
+        else:
+            allowed_cats = self.categories
+            default_cat = "Work"
+            
         if not words:
             # Default fallback based on basic keyword check
             title_lower = title.lower()
-            if "youtube" in title_lower or "netflix" in title_lower or "spotify" in title_lower:
-                return "Entertainment", 0.9
-            if "reddit" in title_lower or "instagram" in title_lower:
-                return "Social Media", 0.9
-            if "discord" in title_lower or "slack" in title_lower or "mail" in title_lower:
-                return "Communication", 0.9
-            return "Work", 0.5 # Default classification
             
-        best_cat = "Work"
+            # If we know it's a distraction, classify into distraction categories
+            if is_distraction is True or is_distraction is None:
+                if any(kw in title_lower for kw in ["youtube", "netflix", "twitch", "spotify", "steam", "roblox", "game", "minecraft", "play", "music", "song"]):
+                    return "Entertainment", 0.9
+                if any(kw in title_lower for kw in ["reddit", "facebook", "instagram", "twitter", "x.com", "pinterest", "linkedin", "tiktok", "snapchat"]):
+                    return "Social Media", 0.9
+                if any(kw in title_lower for kw in ["discord", "whatsapp", "slack", "messenger", "telegram"]):
+                    return "Communication", 0.9
+                if is_distraction is True:
+                    return "Entertainment", 0.6
+                    
+            # If we know it's not a distraction, or we don't know
+            if is_distraction is False or is_distraction is None:
+                if any(kw in title_lower for kw in ["explorer", "settings", "taskmgr", "desktop", "calculator", "notepad", "control panel", "system"]):
+                    return "Utilities", 0.9
+                return "Work", 0.6
+                
+            return default_cat, 0.5
+            
+        best_cat = default_cat
         best_prob = -float("inf")
         probs = {}
         
         vocab_size = len(self.vocab)
         
-        for cat in self.categories:
+        for cat in allowed_cats:
             # Log probability initialized to class prior P(C) - assuming uniform prior for simplicity
             log_prob = 0.0
             
