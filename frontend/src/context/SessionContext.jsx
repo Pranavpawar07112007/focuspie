@@ -28,6 +28,76 @@ export function SessionProvider({ children }) {
   const wsRef = useRef(null);
   const intervalRef = useRef(null);
 
+  const start = useCallback(async (minutes = 25, mode = 'standard') => {
+    try {
+      if (!isActive) await apiStart();
+      setTimerMode(mode);
+      setPomodoroState('focus');
+      setOnBreak(false);
+      
+      if (mode === 'pomodoro') {
+        setTotalTime(25 * 60);
+        setTimeLeft(25 * 60);
+        setPomodoroCycle(1);
+      } else {
+        setTotalTime(minutes * 60);
+        setTimeLeft(minutes * 60);
+      }
+      setIsActive(true);
+      setIsPaused(false);
+    } catch (e) {
+      // Session might already be active
+      setIsActive(true);
+      setIsPaused(false);
+    }
+  }, [isActive]);
+
+  const pause = useCallback(async () => {
+    try {
+      await apiPause();
+    } catch (e) {}
+    setIsPaused(true);
+  }, []);
+
+  const resume = useCallback(async () => {
+    try {
+      await apiResume();
+    } catch (e) {}
+    setIsPaused(false);
+  }, []);
+
+  const stop = useCallback(async () => {
+    // Reward XP for completed focus minutes before resetting
+    const elapsedSeconds = totalTime - timeLeft;
+    if (isActive && !onBreak && elapsedSeconds >= 60) {
+      const minutes = Math.floor(elapsedSeconds / 60);
+      const xpReward = minutes * 5;
+      if (xpReward > 0) {
+        addXP(xpReward);
+        window.dispatchEvent(new Event('storage'));
+        if (Notification.permission === 'granted') {
+          new Notification("XP Earned! ⚡", {
+            body: `You completed ${minutes} focus minutes and earned +${xpReward} Focus XP!`
+          });
+        }
+      }
+    }
+
+    try {
+      if (isActive) await apiStop();
+    } catch {}
+    setIsActive(false);
+    setIsPaused(false);
+    setOnBreak(false);
+    setTimerMode('standard');
+    setPomodoroState('focus');
+    setPomodoroCycle(1);
+    setTimeLeft(25 * 60);
+    setTotalTime(25 * 60);
+  }, [isActive, onBreak, totalTime, timeLeft]);
+
+  const dismissAlert = useCallback(() => setAlert(null), []);
+
   // Request browser notification permissions on mount
   useEffect(() => {
     if ('Notification' in window && Notification.permission === 'default') {
@@ -189,75 +259,7 @@ export function SessionProvider({ children }) {
     };
   }, []);
 
-  const start = useCallback(async (minutes = 25, mode = 'standard') => {
-    try {
-      if (!isActive) await apiStart();
-      setTimerMode(mode);
-      setPomodoroState('focus');
-      setOnBreak(false);
-      
-      if (mode === 'pomodoro') {
-        setTotalTime(25 * 60);
-        setTimeLeft(25 * 60);
-        setPomodoroCycle(1);
-      } else {
-        setTotalTime(minutes * 60);
-        setTimeLeft(minutes * 60);
-      }
-      setIsActive(true);
-      setIsPaused(false);
-    } catch (e) {
-      // Session might already be active
-      setIsActive(true);
-      setIsPaused(false);
-    }
-  }, [isActive]);
 
-  const pause = useCallback(async () => {
-    try {
-      await apiPause();
-    } catch (e) {}
-    setIsPaused(true);
-  }, []);
-
-  const resume = useCallback(async () => {
-    try {
-      await apiResume();
-    } catch (e) {}
-    setIsPaused(false);
-  }, []);
-
-  const stop = useCallback(async () => {
-    // Reward XP for completed focus minutes before resetting
-    const elapsedSeconds = totalTime - timeLeft;
-    if (isActive && !onBreak && elapsedSeconds >= 60) {
-      const minutes = Math.floor(elapsedSeconds / 60);
-      const xpReward = minutes * 5;
-      if (xpReward > 0) {
-        addXP(xpReward);
-        window.dispatchEvent(new Event('storage'));
-        if (Notification.permission === 'granted') {
-          new Notification("XP Earned! ⚡", {
-            body: `You completed ${minutes} focus minutes and earned +${xpReward} Focus XP!`
-          });
-        }
-      }
-    }
-
-    try {
-      if (isActive) await apiStop();
-    } catch {}
-    setIsActive(false);
-    setIsPaused(false);
-    setOnBreak(false);
-    setTimerMode('standard');
-    setPomodoroState('focus');
-    setPomodoroCycle(1);
-    setTimeLeft(25 * 60);
-    setTotalTime(25 * 60);
-  }, [isActive, onBreak, totalTime, timeLeft]);
-
-  const dismissAlert = useCallback(() => setAlert(null), []);
 
   const progress = totalTime > 0 ? ((totalTime - timeLeft) / totalTime) * 100 : 0;
 
