@@ -1,6 +1,6 @@
 {
   "name": "focuspie",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "FocusPie Productivity Tracker",
   "main": "main.js",
   "scripts": {
@@ -11,7 +11,7 @@
   "license": "ISC",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Pranavpawar07112007/Focuspie-Desktop-app.git"
+    "url": "https://github.com/Pranavpawar07112007/focuspie.git"
   },
   "dependencies": {
     "electron-updater": "^6.8.3"
@@ -27,7 +27,7 @@
       {
         "provider": "github",
         "owner": "Pranavpawar07112007",
-        "repo": "Focuspie-Desktop-app"
+        "repo": "focuspie"
       }
     ],
     "directories": {
