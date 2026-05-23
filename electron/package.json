@@ -23,11 +23,13 @@
   "build": {
     "appId": "com.focuspie.app",
     "productName": "FocusPie",
-    "publish": [{
-      "provider": "github",
-      "owner": "Pranavpawar07112007",
-      "repo": "Focuspie-Desktop-app"
-    }],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "Pranavpawar07112007",
+        "repo": "Focuspie-Desktop-app"
+      }
+    ],
     "directories": {
       "output": "dist"
     },
