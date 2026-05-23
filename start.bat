@@ -12,19 +12,19 @@ if not exist "backend\venv\Scripts\python.exe" (
     exit /b 1
 )
 
-:: Ensure frontend dependencies are installed
-if not exist "frontend\node_modules\" (
-    echo [INFO] Frontend node_modules not found. Installing dependencies...
-    cd frontend
-    call npm install
-    cd ..
+:: Ensure frontend build exists
+if not exist "frontend\dist\index.html" (
+    echo [ERROR] Frontend build not found in frontend\dist.
+    echo Please run "npm run build" inside the frontend directory once before using this script.
+    pause
+    exit /b 1
 )
 
 echo [1/3] Spinning up FastAPI backend server on port 8000...
 start "FocusPie Backend" /b cmd /c "cd backend && venv\Scripts\python.exe -m uvicorn main:app --port 8000"
 
-echo [2/3] Spinning up Vite React frontend server on port 5173...
-start "FocusPie Frontend" /b cmd /c "cd frontend && npm run dev"
+echo [2/3] Spinning up static frontend server on port 5173...
+start "FocusPie Frontend" /b cmd /c "cd frontend\dist && ..\..\backend\venv\Scripts\python.exe -m http.server 5173"
 
 echo [3/3] Waiting for servers to initialize...
 timeout /t 4 /nobreak >nul
