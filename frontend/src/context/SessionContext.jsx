@@ -114,23 +114,47 @@ export function SessionProvider({ children }) {
     }
   }, [pomodoroState, pomodoroCycle, pomodoroIntervals]);
 
-  // Timer countdown
+  // Timer countdown - Fix for 50-60 min timer bug (interval drift)
+  const timerExpectedEndRef = useRef(null);
+
   useEffect(() => {
     if (isActive && !isPaused && timeLeft > 0) {
+      // Set expected end time based on current time + remaining seconds
+      if (!timerExpectedEndRef.current) {
+        timerExpectedEndRef.current = Date.now() + (timeLeft * 1000);
+      }
+
       intervalRef.current = setInterval(() => {
-        setTimeLeft((t) => t - 1);
-      }, 1000);
-    } else if (timeLeft === 0 && isActive) {
-      if (timerMode === 'pomodoro') {
-        handlePomodoroTransition();
-      } else {
-        stop();
+        if (!timerExpectedEndRef.current) return;
+        
+        const now = Date.now();
+        const remainingSeconds = Math.max(0, Math.round((timerExpectedEndRef.current - now) / 1000));
+        
+        setTimeLeft(remainingSeconds);
+
+        if (remainingSeconds === 0) {
+          clearInterval(intervalRef.current);
+          timerExpectedEndRef.current = null;
+          
+          if (timerMode === 'pomodoro') {
+            handlePomodoroTransition();
+          } else {
+            stop();
+          }
+        }
+      }, 200); // Check more frequently (every 200ms) for accuracy
+    } else {
+      // If paused or inactive, clear expected end time so it recalculates on resume
+      timerExpectedEndRef.current = null;
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
       }
     }
-    return () => clearInterval(intervalRef.current);
-  }, [isActive, isPaused, timeLeft, timerMode, handlePomodoroTransition]);
-
-  // WebSocket connection for distraction alerts
+    
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, [isActive, isPaused, timerMode, handlePomodoroTransition, stop]); // Removed timeLeft from dependencies to prevent constant resetting
   useEffect(() => {
     let active = true;
     function connect() {

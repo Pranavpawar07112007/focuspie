@@ -43,6 +43,11 @@ class AppState:
         self.distraction_attempts = 0
         self.last_alert_timestamp = 0 # Prevent double notifications/double counting within cooldown
 
+    def update_keywords(self, keywords_list):
+        """Update distraction keywords dynamically from user settings."""
+        with self.lock:
+            self.distraction_keywords = list(keywords_list)
+
 app_state = AppState()
 
 SYSTEM_FRIENDLY_NAMES = {

@@ -1,0 +1,69 @@
+{
+  "name": "focuspie",
+  "version": "1.0.0",
+  "description": "FocusPie Productivity Tracker",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder build --win --x64"
+  },
+  "author": "FocusPie",
+  "license": "ISC",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Pranavpawar07112007/Focuspie-Desktop-app.git"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.3"
+  },
+  "devDependencies": {
+    "electron": "^30.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.focuspie.app",
+    "productName": "FocusPie",
+    "publish": [{
+      "provider": "github",
+      "owner": "Pranavpawar07112007",
+      "repo": "Focuspie-Desktop-app"
+    }],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "icon.png"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": true,
+      "allowToChangeInstallationDirectory": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "FocusPie"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "splash.html",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../frontend/dist",
+        "to": "frontend/dist",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "../backend/dist/focuspie_server",
+        "to": "backend/focuspie_server",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ]
+  }
+}

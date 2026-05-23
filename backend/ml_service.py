@@ -16,9 +16,14 @@ class ActivityClassifier:
         # Vocabulary set
         self.vocab = set()
         
-        # Persistent model path setup
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        self.model_path = os.path.join(base_dir, "activity_model.json")
+        # Persistent model path setup — use AppData for PyInstaller compatibility
+        app_data = os.environ.get('LOCALAPPDATA')
+        if app_data:
+            model_dir = os.path.join(app_data, 'FocusPie')
+        else:
+            model_dir = os.path.join(os.path.expanduser('~'), '.focuspie')
+        os.makedirs(model_dir, exist_ok=True)
+        self.model_path = os.path.join(model_dir, "activity_model.json")
         
         if os.path.exists(self.model_path):
             self.load_model()

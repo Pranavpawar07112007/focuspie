@@ -1,15 +1,41 @@
 import React, { useEffect } from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import { SessionProvider } from './context/SessionContext';
 import { ThemeProvider } from './context/ThemeContext';
 import Layout from './components/Layout';
 import DistractionOverlay from './components/DistractionOverlay';
+import LoginPage from './components/LoginPage';
+import SettingsPage from './components/SettingsPage';
 import FocusTimer from './components/FocusTimer';
 import TodoList from './components/TodoList';
 import Insights from './components/Insights';
 import CalendarView from './components/CalendarView';
 import LiveSessionTimeline from './components/LiveSessionTimeline';
 import { playSound } from './utils';
+
+
+// ── Protected Route Wrapper ───────────────────────────
+function ProtectedRoute({ children }) {
+  const { isAuthenticated, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-white dark:bg-[#050a18]">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-10 h-10 border-3 border-brand-blue/30 border-t-brand-blue rounded-full animate-spin" />
+          <p className="text-xs font-semibold text-slate-500">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+
+  return children;
+}
 
 
 // ── Dashboard Page ─────────────────────────────────────
@@ -61,8 +87,16 @@ function CalendarPage() {
   return <CalendarView />;
 }
 
-// ── App Root ───────────────────────────────────────────
-function App() {
+// ── Settings Page ──────────────────────────────────────
+function SettingsPageWrapper() {
+  return <SettingsPage />;
+}
+
+
+// ── App Content (needs auth context) ──────────────────
+function AppContent() {
+  const { isAuthenticated, isLoading } = useAuth();
+
   useEffect(() => {
     const handleGlobalClick = (e) => {
       const interactiveEl = e.target.closest('button, a, input, select, textarea, [role="button"], .cursor-pointer');
@@ -76,22 +110,88 @@ function App() {
     };
   }, []);
 
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-white dark:bg-[#050a18]">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-10 h-10 border-3 border-brand-blue/30 border-t-brand-blue rounded-full animate-spin" />
+          <p className="text-xs font-semibold text-slate-500">Starting FocusPie...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <BrowserRouter>
+    <Routes>
+      <Route path="/login" element={
+        isAuthenticated ? <Navigate to="/" replace /> : <LoginPage />
+      } />
+      <Route path="/" element={
+        <ProtectedRoute>
+          <SessionProvider>
+            <Layout>
+              <DashboardPage />
+            </Layout>
+            <DistractionOverlay />
+          </SessionProvider>
+        </ProtectedRoute>
+      } />
+      <Route path="/tasks" element={
+        <ProtectedRoute>
+          <SessionProvider>
+            <Layout>
+              <TasksPage />
+            </Layout>
+            <DistractionOverlay />
+          </SessionProvider>
+        </ProtectedRoute>
+      } />
+      <Route path="/insights" element={
+        <ProtectedRoute>
+          <SessionProvider>
+            <Layout>
+              <InsightsPage />
+            </Layout>
+            <DistractionOverlay />
+          </SessionProvider>
+        </ProtectedRoute>
+      } />
+      <Route path="/calendar" element={
+        <ProtectedRoute>
+          <SessionProvider>
+            <Layout>
+              <CalendarPage />
+            </Layout>
+            <DistractionOverlay />
+          </SessionProvider>
+        </ProtectedRoute>
+      } />
+      <Route path="/settings" element={
+        <ProtectedRoute>
+          <SessionProvider>
+            <Layout>
+              <SettingsPageWrapper />
+            </Layout>
+            <DistractionOverlay />
+          </SessionProvider>
+        </ProtectedRoute>
+      } />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
+}
+
+
+// ── App Root ───────────────────────────────────────────
+function App() {
+  return (
+    <HashRouter>
       <ThemeProvider>
-        <SessionProvider>
-          <Layout>
-            <Routes>
-              <Route path="/" element={<DashboardPage />} />
-              <Route path="/tasks" element={<TasksPage />} />
-              <Route path="/insights" element={<InsightsPage />} />
-              <Route path="/calendar" element={<CalendarPage />} />
-            </Routes>
-          </Layout>
-          <DistractionOverlay />
-        </SessionProvider>
+        <AuthProvider>
+          <AppContent />
+        </AuthProvider>
       </ThemeProvider>
-    </BrowserRouter>
+    </HashRouter>
   );
 }
 

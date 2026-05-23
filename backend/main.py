@@ -1,17 +1,26 @@
-from fastapi import FastAPI, Depends, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Depends, HTTPException, WebSocket, WebSocketDisconnect, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func, text
 from datetime import datetime, timedelta
 import asyncio
 import json
+import csv
+import io
 from contextlib import asynccontextmanager
 
 from database import engine, Base, get_db, SessionLocal
 from models import (
-    FocusSession, WindowLog, Todo,
+    FocusSession, WindowLog, Todo, User, UserSettings,
     TodoCreate, TodoUpdate, TodoResponse,
     SessionResponse, SessionStopResponse,
+    UserCreate, UserLogin, TokenResponse, UserResponse,
+    UserSettingsResponse, UserSettingsUpdate,
+)
+from auth import (
+    hash_password, verify_password, create_access_token,
+    get_current_user, get_optional_user,
 )
 from tracker import app_state, start_tracker
 import re
@@ -107,6 +116,228 @@ app.add_middleware(
 )
 
 
+# ─── Health Check (unprotected, used by Electron) ────────────────────
+
+@app.get("/api/health")
+def health_check():
+    return {"status": "ok"}
+
+
+# ─── Auth Endpoints ──────────────────────────────────────────────────
+
+@app.post("/api/auth/signup", response_model=TokenResponse)
+def signup(user_data: UserCreate, db: Session = Depends(get_db)):
+    if not user_data.username or len(user_data.username.strip()) < 2:
+        raise HTTPException(status_code=400, detail="Username must be at least 2 characters")
+    if not user_data.password or len(user_data.password) < 4:
+        raise HTTPException(status_code=400, detail="Password must be at least 4 characters")
+    
+    existing = db.query(User).filter(User.username == user_data.username.strip()).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Username already taken")
+    
+    user = User(
+        username=user_data.username.strip(),
+        hashed_password=hash_password(user_data.password),
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    
+    # Create default settings for the new user
+    settings = UserSettings(user_id=user.id)
+    db.add(settings)
+    db.commit()
+    
+    token = create_access_token({"sub": user.id})
+    return TokenResponse(access_token=token, username=user.username)
+
+
+@app.post("/api/auth/login", response_model=TokenResponse)
+def login(user_data: UserLogin, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.username == user_data.username.strip()).first()
+    if not user or not verify_password(user_data.password, user.hashed_password):
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+    
+    token = create_access_token({"sub": user.id})
+    return TokenResponse(access_token=token, username=user.username)
+
+
+@app.get("/api/auth/me", response_model=UserResponse)
+def get_me(current_user: User = Depends(get_current_user)):
+    return current_user
+
+
+# ─── Settings Endpoints ──────────────────────────────────────────────
+
+@app.get("/api/settings", response_model=UserSettingsResponse)
+def get_settings(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    settings = db.query(UserSettings).filter(UserSettings.user_id == current_user.id).first()
+    if not settings:
+        settings = UserSettings(user_id=current_user.id)
+        db.add(settings)
+        db.commit()
+        db.refresh(settings)
+    
+    keywords = json.loads(settings.distraction_keywords) if settings.distraction_keywords else []
+    return UserSettingsResponse(
+        focus_duration=settings.focus_duration,
+        short_break_duration=settings.short_break_duration,
+        long_break_duration=settings.long_break_duration,
+        distraction_keywords=keywords,
+        theme=settings.theme,
+    )
+
+
+@app.put("/api/settings", response_model=UserSettingsResponse)
+def update_settings(
+    updates: UserSettingsUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    settings = db.query(UserSettings).filter(UserSettings.user_id == current_user.id).first()
+    if not settings:
+        settings = UserSettings(user_id=current_user.id)
+        db.add(settings)
+        db.commit()
+        db.refresh(settings)
+    
+    if updates.focus_duration is not None:
+        settings.focus_duration = max(1, min(180, updates.focus_duration))
+    if updates.short_break_duration is not None:
+        settings.short_break_duration = max(1, min(60, updates.short_break_duration))
+    if updates.long_break_duration is not None:
+        settings.long_break_duration = max(1, min(60, updates.long_break_duration))
+    if updates.distraction_keywords is not None:
+        settings.distraction_keywords = json.dumps(updates.distraction_keywords)
+        # Update the tracker's live keywords
+        app_state.update_keywords(updates.distraction_keywords)
+    if updates.theme is not None:
+        settings.theme = updates.theme
+    
+    db.commit()
+    db.refresh(settings)
+    
+    keywords = json.loads(settings.distraction_keywords) if settings.distraction_keywords else []
+    return UserSettingsResponse(
+        focus_duration=settings.focus_duration,
+        short_break_duration=settings.short_break_duration,
+        long_break_duration=settings.long_break_duration,
+        distraction_keywords=keywords,
+        theme=settings.theme,
+    )
+
+
+# ─── Data Management Endpoints ───────────────────────────────────────
+
+@app.get("/api/data/export")
+def export_data(
+    format: str = Query("json", regex="^(json|csv)$"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Export all user data as JSON or CSV."""
+    sessions = db.query(FocusSession).filter(
+        (FocusSession.user_id == current_user.id) | (FocusSession.user_id == None)
+    ).all()
+    todos = db.query(Todo).filter(
+        (Todo.user_id == current_user.id) | (Todo.user_id == None)
+    ).all()
+    
+    if format == "json":
+        data = {
+            "user": {"username": current_user.username, "created_at": current_user.created_at.isoformat()},
+            "sessions": [
+                {
+                    "id": s.id,
+                    "start_time": s.start_time.isoformat() if s.start_time else None,
+                    "end_time": s.end_time.isoformat() if s.end_time else None,
+                    "total_duration": s.total_duration,
+                    "status": s.status,
+                }
+                for s in sessions
+            ],
+            "todos": [
+                {
+                    "id": t.id,
+                    "task": t.task,
+                    "completed": t.completed,
+                    "priority": t.priority,
+                    "status": t.status,
+                    "deadline": t.deadline.isoformat() if t.deadline else None,
+                    "created_at": t.created_at.isoformat() if t.created_at else None,
+                }
+                for t in todos
+            ],
+        }
+        content = json.dumps(data, indent=2)
+        return StreamingResponse(
+            io.BytesIO(content.encode()),
+            media_type="application/json",
+            headers={"Content-Disposition": "attachment; filename=focuspie_export.json"},
+        )
+    else:
+        # CSV format
+        output = io.StringIO()
+        
+        # Sessions sheet
+        output.write("=== FOCUS SESSIONS ===\n")
+        writer = csv.writer(output)
+        writer.writerow(["ID", "Start Time", "End Time", "Duration (seconds)", "Status"])
+        for s in sessions:
+            writer.writerow([
+                s.id,
+                s.start_time.isoformat() if s.start_time else "",
+                s.end_time.isoformat() if s.end_time else "",
+                s.total_duration or 0,
+                s.status,
+            ])
+        
+        output.write("\n=== TODOS ===\n")
+        writer.writerow(["ID", "Task", "Completed", "Priority", "Status", "Deadline", "Created At"])
+        for t in todos:
+            writer.writerow([
+                t.id,
+                t.task,
+                t.completed,
+                t.priority,
+                t.status,
+                t.deadline.isoformat() if t.deadline else "",
+                t.created_at.isoformat() if t.created_at else "",
+            ])
+        
+        content = output.getvalue()
+        return StreamingResponse(
+            io.BytesIO(content.encode()),
+            media_type="text/csv",
+            headers={"Content-Disposition": "attachment; filename=focuspie_export.csv"},
+        )
+
+
+@app.delete("/api/data/delete-account")
+def delete_account(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Permanently delete user account and all associated data."""
+    # Delete window logs for user's sessions
+    user_sessions = db.query(FocusSession).filter(FocusSession.user_id == current_user.id).all()
+    for s in user_sessions:
+        db.query(WindowLog).filter(WindowLog.session_id == s.id).delete()
+    
+    # Delete sessions
+    db.query(FocusSession).filter(FocusSession.user_id == current_user.id).delete()
+    # Delete todos
+    db.query(Todo).filter(Todo.user_id == current_user.id).delete()
+    # Delete settings
+    db.query(UserSettings).filter(UserSettings.user_id == current_user.id).delete()
+    # Delete user
+    db.query(User).filter(User.id == current_user.id).delete()
+    
+    db.commit()
+    return {"message": "Account and all data deleted permanently"}
+
+
 # ─── Helpers ─────────────────────────────────────────────────────────
 
 PRIORITY_ORDER = {"high": 0, "medium": 1, "low": 2}
@@ -159,10 +390,28 @@ def smart_sort(todos):
 # ─── Session Endpoints ───────────────────────────────────────────────
 
 @app.post("/api/session/start", response_model=SessionResponse)
-def start_session(db: Session = Depends(get_db)):
+def start_session(
+    current_user: User = Depends(get_optional_user),
+    db: Session = Depends(get_db),
+):
     if app_state.is_tracking:
         raise HTTPException(status_code=400, detail="A session is already active")
-    new_session = FocusSession(start_time=datetime.now(), status="active")
+    
+    # Load user's custom distraction keywords if authenticated
+    if current_user:
+        settings = db.query(UserSettings).filter(UserSettings.user_id == current_user.id).first()
+        if settings and settings.distraction_keywords:
+            try:
+                keywords = json.loads(settings.distraction_keywords)
+                app_state.update_keywords(keywords)
+            except json.JSONDecodeError:
+                pass
+    
+    new_session = FocusSession(
+        start_time=datetime.now(),
+        status="active",
+        user_id=current_user.id if current_user else None,
+    )
     db.add(new_session)
     db.commit()
     db.refresh(new_session)
@@ -524,19 +773,32 @@ def predict_focus_forecast(db: Session = Depends(get_db)):
 # ─── Todo Endpoints ─────────────────────────────────────────────────
 
 @app.get("/api/todos")
-def get_todos(db: Session = Depends(get_db)):
-    todos = db.query(Todo).all()
+def get_todos(
+    current_user: User = Depends(get_optional_user),
+    db: Session = Depends(get_db),
+):
+    if current_user:
+        todos = db.query(Todo).filter(
+            (Todo.user_id == current_user.id) | (Todo.user_id == None)
+        ).all()
+    else:
+        todos = db.query(Todo).all()
     sorted_todos = smart_sort(todos)
     return [todo_to_response(t) for t in sorted_todos]
 
 @app.post("/api/todos")
-def create_todo(todo: TodoCreate, db: Session = Depends(get_db)):
+def create_todo(
+    todo: TodoCreate,
+    current_user: User = Depends(get_optional_user),
+    db: Session = Depends(get_db),
+):
     new_todo = Todo(
         task=todo.task,
         completed=todo.completed,
         priority=todo.priority,
         status=todo.status,
         deadline=todo.deadline,
+        user_id=current_user.id if current_user else None,
     )
     db.add(new_todo)
     db.commit()
@@ -871,3 +1133,13 @@ async def websocket_endpoint(websocket: WebSocket):
             await asyncio.sleep(0.5)
     except WebSocketDisconnect:
         print("Client disconnected")
+
+if __name__ == "__main__":
+    import uvicorn
+    import multiprocessing
+    
+    # On Windows, PyInstaller requires this for multiprocessing to work safely
+    multiprocessing.freeze_support()
+    
+    # Run the server
+    uvicorn.run(app, host="127.0.0.1", port=8000, log_level="info")

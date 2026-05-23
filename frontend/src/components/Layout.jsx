@@ -1,15 +1,17 @@
 import React from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
-import { LayoutDashboard, ListChecks, BarChart3, CalendarDays, Zap, Sun, Moon } from 'lucide-react';
+import { LayoutDashboard, ListChecks, BarChart3, CalendarDays, Settings, Zap, Sun, Moon, LogOut, User } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSession } from '../context/SessionContext';
 import { useTheme } from '../context/ThemeContext';
+import { useAuth } from '../context/AuthContext';
 
 const navItems = [
   { to: '/',         icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/tasks',    icon: ListChecks,      label: 'Tasks' },
   { to: '/insights', icon: BarChart3,       label: 'Insights' },
   { to: '/calendar', icon: CalendarDays,    label: 'Calendar' },
+  { to: '/settings', icon: Settings,        label: 'Settings' },
 ];
 
 function NavItem({ to, icon: Icon, label }) {
@@ -44,6 +46,7 @@ function NavItem({ to, icon: Icon, label }) {
 export default function Layout({ children }) {
   const { isActive: sessionActive } = useSession();
   const { theme, toggleTheme } = useTheme();
+  const { user, logout } = useAuth();
   const location = useLocation();
 
   return (
@@ -89,7 +92,7 @@ export default function Layout({ children }) {
           ))}
         </nav>
 
-        {/* Right Section: Mobile Menu Link & Rotating Theme Toggle Icon */}
+        {/* Right Section: User Badge, Mobile Nav & Theme Toggle */}
         <div className="flex items-center gap-3">
           {/* Mobile Navigation */}
           <nav className="flex md:hidden items-center gap-1">
@@ -110,6 +113,18 @@ export default function Layout({ children }) {
               );
             })}
           </nav>
+
+          {/* User Badge */}
+          {user && (
+            <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-slate-100/70 dark:bg-white/[0.04] border border-slate-200/30 dark:border-white/[0.05]">
+              <div className="w-5 h-5 rounded-full bg-gradient-to-br from-brand-blue to-brand-purple flex items-center justify-center">
+                <span className="text-[9px] font-bold text-white uppercase">{user.username?.[0]}</span>
+              </div>
+              <span className="text-[10px] font-semibold text-slate-600 dark:text-slate-400 max-w-[60px] truncate">
+                {user.username}
+              </span>
+            </div>
+          )}
 
           {/* Micro-Animated Premium Theme Toggle */}
           <button
