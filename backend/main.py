@@ -73,12 +73,38 @@ def migrate_database_to_local_time(db):
         print(f"Error migrating database timestamps: {e}")
         db.rollback()
 
+def migrate_schema(db):
+    try:
+        result = db.execute(text("PRAGMA table_info(user_settings)")).fetchall()
+        columns = [row[1] for row in result]
+        if columns:
+            if 'focus_duration' not in columns:
+                db.execute(text("ALTER TABLE user_settings ADD COLUMN focus_duration INTEGER DEFAULT 25"))
+            if 'short_break_duration' not in columns:
+                db.execute(text("ALTER TABLE user_settings ADD COLUMN short_break_duration INTEGER DEFAULT 5"))
+            if 'long_break_duration' not in columns:
+                db.execute(text("ALTER TABLE user_settings ADD COLUMN long_break_duration INTEGER DEFAULT 15"))
+            if 'pomodoro_intervals' not in columns:
+                db.execute(text("ALTER TABLE user_settings ADD COLUMN pomodoro_intervals INTEGER DEFAULT 4"))
+            if 'distraction_keywords' not in columns:
+                db.execute(text("ALTER TABLE user_settings ADD COLUMN distraction_keywords TEXT DEFAULT '[]'"))
+            if 'theme' not in columns:
+                db.execute(text("ALTER TABLE user_settings ADD COLUMN theme TEXT DEFAULT 'light'"))
+            if 'avatar_style' not in columns:
+                db.execute(text("ALTER TABLE user_settings ADD COLUMN avatar_style TEXT DEFAULT 'fox'"))
+            db.commit()
+            print("Successfully migrated user_settings schema")
+    except Exception as e:
+        print(f"Error migrating schema: {e}")
+        db.rollback()
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Run automatic timezone migration first
     db = SessionLocal()
     try:
         migrate_database_to_local_time(db)
+        migrate_schema(db)
     finally:
         db.close()
 
@@ -184,8 +210,10 @@ def get_settings(current_user: User = Depends(get_current_user), db: Session = D
         focus_duration=settings.focus_duration,
         short_break_duration=settings.short_break_duration,
         long_break_duration=settings.long_break_duration,
+        pomodoro_intervals=settings.pomodoro_intervals,
         distraction_keywords=keywords,
         theme=settings.theme,
+        avatar_style=settings.avatar_style,
     )
 
 
@@ -208,12 +236,16 @@ def update_settings(
         settings.short_break_duration = max(1, min(60, updates.short_break_duration))
     if updates.long_break_duration is not None:
         settings.long_break_duration = max(1, min(60, updates.long_break_duration))
+    if updates.pomodoro_intervals is not None:
+        settings.pomodoro_intervals = max(1, min(10, updates.pomodoro_intervals))
     if updates.distraction_keywords is not None:
         settings.distraction_keywords = json.dumps(updates.distraction_keywords)
         # Update the tracker's live keywords
         app_state.update_keywords(updates.distraction_keywords)
     if updates.theme is not None:
         settings.theme = updates.theme
+    if updates.avatar_style is not None:
+        settings.avatar_style = updates.avatar_style
     
     db.commit()
     db.refresh(settings)
@@ -223,8 +255,10 @@ def update_settings(
         focus_duration=settings.focus_duration,
         short_break_duration=settings.short_break_duration,
         long_break_duration=settings.long_break_duration,
+        pomodoro_intervals=settings.pomodoro_intervals,
         distraction_keywords=keywords,
         theme=settings.theme,
+        avatar_style=settings.avatar_style,
     )
 
 
@@ -237,12 +271,8 @@ def export_data(
     db: Session = Depends(get_db),
 ):
     """Export all user data as JSON or CSV."""
-    sessions = db.query(FocusSession).filter(
-        (FocusSession.user_id == current_user.id) | (FocusSession.user_id == None)
-    ).all()
-    todos = db.query(Todo).filter(
-        (Todo.user_id == current_user.id) | (Todo.user_id == None)
-    ).all()
+    sessions = db.query(FocusSession).filter(FocusSession.user_id == current_user.id).all()
+    todos = db.query(Todo).filter(Todo.user_id == current_user.id).all()
     
     if format == "json":
         data = {
@@ -391,7 +421,7 @@ def smart_sort(todos):
 
 @app.post("/api/session/start", response_model=SessionResponse)
 def start_session(
-    current_user: User = Depends(get_optional_user),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     if app_state.is_tracking:
@@ -466,9 +496,12 @@ def session_status():
 # ─── Granular Session Explorer Endpoints ─────────────────────────────
 
 @app.get("/api/sessions")
-def get_all_sessions(db: Session = Depends(get_db)):
+def get_all_sessions(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Get all completed focus sessions with summary statistics."""
-    sessions = db.query(FocusSession).filter(FocusSession.status == "completed").order_by(FocusSession.start_time.desc()).all()
+    sessions = db.query(FocusSession).filter(
+        FocusSession.status == "completed",
+        FocusSession.user_id == current_user.id
+    ).order_by(FocusSession.start_time.desc()).all()
     
     result = []
     for s in sessions:
@@ -582,9 +615,9 @@ def get_normalized_app_key(application_name, window_title):
     return specific
 
 @app.get("/api/sessions/{session_id}")
-def get_session_details(session_id: int, db: Session = Depends(get_db)):
+def get_session_details(session_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Get detailed minute-binned timeline, top distractions, AI classification and incidents for a specific session."""
-    session = db.query(FocusSession).filter(FocusSession.id == session_id).first()
+    session = db.query(FocusSession).filter(FocusSession.id == session_id, FocusSession.user_id == current_user.id).first()
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
         
@@ -687,9 +720,12 @@ def delete_session(session_id: int, db: Session = Depends(get_db)):
 # ─── Machine Learning Predictor Endpoints ────────────────────────────
 
 @app.get("/api/ml/predict")
-def predict_focus_forecast(db: Session = Depends(get_db)):
+def predict_focus_forecast(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Predict expected focus score and return productivity categorization and trends."""
-    sessions = db.query(FocusSession).filter(FocusSession.status == "completed").all()
+    sessions = db.query(FocusSession).filter(
+        FocusSession.status == "completed",
+        FocusSession.user_id == current_user.id
+    ).all()
     
     session_data = []
     for s in sessions:
@@ -719,7 +755,13 @@ def predict_focus_forecast(db: Session = Depends(get_db)):
         })
 
     # Calculate global categorization distribution — show as minutes (logs are 1/sec)
-    all_logs = db.query(WindowLog).all()
+    all_sessions = db.query(FocusSession).filter(FocusSession.user_id == current_user.id).all()
+    session_ids = [s.id for s in all_sessions]
+    if session_ids:
+        all_logs = db.query(WindowLog).filter(WindowLog.session_id.in_(session_ids)).all()
+    else:
+        all_logs = []
+        
     cat_counts = {"Work": 0, "Entertainment": 0, "Social Media": 0, "Communication": 0, "Utilities": 0}
     for l in all_logs:
         if l.window_title:
@@ -774,22 +816,17 @@ def predict_focus_forecast(db: Session = Depends(get_db)):
 
 @app.get("/api/todos")
 def get_todos(
-    current_user: User = Depends(get_optional_user),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    if current_user:
-        todos = db.query(Todo).filter(
-            (Todo.user_id == current_user.id) | (Todo.user_id == None)
-        ).all()
-    else:
-        todos = db.query(Todo).all()
+    todos = db.query(Todo).filter(Todo.user_id == current_user.id).all()
     sorted_todos = smart_sort(todos)
     return [todo_to_response(t) for t in sorted_todos]
 
 @app.post("/api/todos")
 def create_todo(
     todo: TodoCreate,
-    current_user: User = Depends(get_optional_user),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     new_todo = Todo(
@@ -806,8 +843,8 @@ def create_todo(
     return todo_to_response(new_todo)
 
 @app.put("/api/todos/{todo_id}")
-def update_todo(todo_id: int, todo_update: TodoUpdate, db: Session = Depends(get_db)):
-    db_todo = db.query(Todo).filter(Todo.id == todo_id).first()
+def update_todo(todo_id: int, todo_update: TodoUpdate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    db_todo = db.query(Todo).filter(Todo.id == todo_id, Todo.user_id == current_user.id).first()
     if not db_todo:
         raise HTTPException(status_code=404, detail="Todo not found")
     if todo_update.task is not None:
@@ -831,8 +868,8 @@ def update_todo(todo_id: int, todo_update: TodoUpdate, db: Session = Depends(get
     return todo_to_response(db_todo)
 
 @app.delete("/api/todos/{todo_id}")
-def delete_todo(todo_id: int, db: Session = Depends(get_db)):
-    db_todo = db.query(Todo).filter(Todo.id == todo_id).first()
+def delete_todo(todo_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    db_todo = db.query(Todo).filter(Todo.id == todo_id, Todo.user_id == current_user.id).first()
     if not db_todo:
         raise HTTPException(status_code=404, detail="Todo not found")
     db.delete(db_todo)
@@ -843,10 +880,10 @@ def delete_todo(todo_id: int, db: Session = Depends(get_db)):
 # ─── Calendar Endpoint ───────────────────────────────────────────────
 
 @app.get("/api/calendar")
-def get_calendar(db: Session = Depends(get_db)):
+def get_calendar(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Return all tasks and sessions organized by date for calendar view."""
-    todos = db.query(Todo).all()
-    sessions = db.query(FocusSession).filter(FocusSession.status == "completed").all()
+    todos = db.query(Todo).filter(Todo.user_id == current_user.id).all()
+    sessions = db.query(FocusSession).filter(FocusSession.status == "completed", FocusSession.user_id == current_user.id).all()
 
     events = []
 
@@ -891,35 +928,41 @@ def get_calendar(db: Session = Depends(get_db)):
 # ─── Insights Endpoint (REAL data) ───────────────────────────────────
 
 @app.get("/api/insights")
-def get_insights(range: str = "today", db: Session = Depends(get_db)):
+def get_insights(range: str = "today", current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     now = datetime.now()
+    user_id = current_user.id
     
     # Filter base queries by date range
     if range == "today":
         start_time = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        sessions = db.query(FocusSession).filter(FocusSession.status == "completed", FocusSession.start_time >= start_time).all()
-        logs = db.query(WindowLog).filter(WindowLog.timestamp >= start_time).all()
+        sessions = db.query(FocusSession).filter(FocusSession.status == "completed", FocusSession.start_time >= start_time, FocusSession.user_id == user_id).all()
+        session_ids = [s.id for s in sessions]
+        logs = db.query(WindowLog).filter(WindowLog.timestamp >= start_time, WindowLog.session_id.in_(session_ids)).all() if session_ids else []
         
         # Filter todos due today or created today
         end_time = now.replace(hour=23, minute=59, second=59, microsecond=999999)
         todos = db.query(Todo).filter(
-            ((Todo.deadline >= start_time) & (Todo.deadline <= end_time)) |
-            ((Todo.created_at >= start_time) & (Todo.created_at <= end_time))
+            Todo.user_id == user_id,
+            (((Todo.deadline >= start_time) & (Todo.deadline <= end_time)) |
+            ((Todo.created_at >= start_time) & (Todo.created_at <= end_time)))
         ).all()
     elif range == "week":
         start_time = now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=7)
-        sessions = db.query(FocusSession).filter(FocusSession.status == "completed", FocusSession.start_time >= start_time).all()
-        logs = db.query(WindowLog).filter(WindowLog.timestamp >= start_time).all()
+        sessions = db.query(FocusSession).filter(FocusSession.status == "completed", FocusSession.start_time >= start_time, FocusSession.user_id == user_id).all()
+        session_ids = [s.id for s in sessions]
+        logs = db.query(WindowLog).filter(WindowLog.timestamp >= start_time, WindowLog.session_id.in_(session_ids)).all() if session_ids else []
         
         todos = db.query(Todo).filter(
-            (Todo.deadline >= start_time) |
-            (Todo.created_at >= start_time)
+            Todo.user_id == user_id,
+            ((Todo.deadline >= start_time) |
+            (Todo.created_at >= start_time))
         ).all()
     else:
         # "all"
-        sessions = db.query(FocusSession).filter(FocusSession.status == "completed").all()
-        logs = db.query(WindowLog).all()
-        todos = db.query(Todo).all()
+        sessions = db.query(FocusSession).filter(FocusSession.status == "completed", FocusSession.user_id == user_id).all()
+        session_ids = [s.id for s in sessions]
+        logs = db.query(WindowLog).filter(WindowLog.session_id.in_(session_ids)).all() if session_ids else []
+        todos = db.query(Todo).filter(Todo.user_id == user_id).all()
 
     total_focus_seconds = sum(s.total_duration or 0 for s in sessions)
     total_sessions = len(sessions)
@@ -1078,12 +1121,12 @@ def _finalize_group(group):
 # ─── Live Session Timeline ───────────────────────────────────────────
 
 @app.get("/api/session/live-timeline")
-def get_live_timeline(db: Session = Depends(get_db)):
+def get_live_timeline(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Get the activity timeline for the currently active session (real-time)."""
     if not app_state.is_tracking or app_state.active_session_id is None:
         return {"active": False, "timeline": [], "stats": None}
     
-    session = db.query(FocusSession).filter(
+    session = db.query(FocusSession).filter(FocusSession.user_id == current_user.id, 
         FocusSession.id == app_state.active_session_id
     ).first()
     if not session:

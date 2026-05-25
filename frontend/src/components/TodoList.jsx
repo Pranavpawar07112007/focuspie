@@ -30,8 +30,9 @@ function TaskCard({ todo, onToggle, onDelete, onStatusChange }) {
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, x: -16, scale: 0.95 }}
+      whileHover={{ scale: 1.02, y: -2 }}
       transition={{ duration: 0.2 }}
-      className="group relative p-4 rounded-xl transition-all duration-200"
+      className="group relative p-4 rounded-[2rem] transition-all duration-200"
       style={{
         background: pc.bg,
         border: `1px solid ${pc.border}`,
@@ -332,7 +333,7 @@ export default function TodoList({ compact = false }) {
   const renderXpBanner = (isCompact = false) => {
     if (isCompact) {
       return (
-        <div className="flex items-center justify-between p-3 rounded-xl bg-gradient-to-r from-brand-blue/5 via-brand-purple/5 to-brand-cyan/2 border border-brand-blue/10 dark:border-white/[0.04] mb-4">
+        <div className="flex items-center justify-between p-3 rounded-2xl bg-gradient-to-r from-brand-blue/5 via-brand-purple/5 to-brand-cyan/2 border border-brand-blue/10 dark:border-white/[0.04] mb-4">
           <div className="flex items-center gap-2">
             <span className="text-[9px] font-bold text-brand-blue bg-brand-blue/15 px-2 py-0.5 rounded-md">
               LVL {levelData.level}
@@ -353,7 +354,7 @@ export default function TodoList({ compact = false }) {
       <motion.div 
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
-        className="relative overflow-hidden p-5 rounded-2xl border border-brand-blue/10 dark:border-white/[0.05] bg-gradient-to-r from-brand-blue/[0.04] via-brand-purple/[0.04] to-brand-cyan/[0.02] flex flex-col md:flex-row items-center justify-between gap-4 mb-6 shadow-sm"
+        className="relative overflow-hidden p-5 rounded-3xl border border-brand-blue/10 dark:border-white/[0.05] bg-gradient-to-r from-brand-blue/[0.04] via-brand-purple/[0.04] to-brand-cyan/[0.02] flex flex-col md:flex-row items-center justify-between gap-4 mb-6 shadow-sm"
       >
         <div className="absolute top-0 right-1/4 w-[150px] h-[150px] bg-brand-blue/[0.04] blur-[30px] rounded-full pointer-events-none" />
         <div className="absolute bottom-0 left-1/4 w-[150px] h-[150px] bg-brand-purple/[0.04] blur-[30px] rounded-full pointer-events-none" />
@@ -514,7 +515,7 @@ export default function TodoList({ compact = false }) {
               transition: { type: "spring", damping: 15, stiffness: 200 }
             }}
             exit={{ scale: 0.95, y: 15, opacity: 0 }}
-            className="w-full max-w-md bg-white dark:bg-[#0b142c] p-8 rounded-3xl border border-brand-blue/20 dark:border-white/10 shadow-2xl relative text-center overflow-hidden"
+            className="w-full max-w-md bg-white dark:bg-[#0b142c] p-8 rounded-[2.5rem] border border-brand-blue/20 dark:border-white/10 shadow-2xl relative text-center overflow-hidden"
           >
             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[350px] h-[350px] rounded-full bg-gradient-to-tr from-brand-blue/15 to-brand-purple/15 blur-[50px] pointer-events-none" />
 
@@ -678,7 +679,8 @@ export default function TodoList({ compact = false }) {
                     initial={{ opacity: 0, y: 4 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, x: -10 }}
-                    className="p-3 rounded-xl border border-slate-100 dark:border-white/[0.04] bg-slate-50/50 dark:bg-white/[0.01] hover:bg-slate-50 dark:hover:bg-white/[0.03] transition-all flex items-start gap-2.5 group"
+                    whileHover={{ scale: 1.02 }}
+                    className="p-3 rounded-2xl border border-slate-100 dark:border-white/[0.04] bg-slate-50/50 dark:bg-white/[0.01] hover:bg-slate-50 dark:hover:bg-white/[0.03] transition-all flex items-start gap-2.5 group"
                   >
                     {/* Checkbox */}
                     <button

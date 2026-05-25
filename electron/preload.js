@@ -1,6 +1,7 @@
-const { contextBridge } = require('electron');
+const { contextBridge, ipcRenderer } = require('electron');
 
 // Expose minimal API to renderer process if needed in future
 contextBridge.exposeInMainWorld('electronAPI', {
-  // Currently we use standard HTTP/WS so we don't need IPC for core app logic
+  getAppVersion: () => ipcRenderer.invoke('get-app-version'),
+  checkForUpdates: () => ipcRenderer.invoke('check-for-updates')
 });

@@ -5,6 +5,8 @@ import {
   pauseSession as apiPause, 
   resumeSession as apiResume, 
   sessionStatus, 
+  getSettings,
+  updateSettings,
   WS_ALERTS 
 } from '../api';
 import { addXP } from '../utils';
@@ -23,10 +25,21 @@ export function SessionProvider({ children }) {
   const [pomodoroState, setPomodoroState] = useState('focus'); // 'focus', 'short_break', 'long_break'
   const [pomodoroCycle, setPomodoroCycle] = useState(1);
   const [pomodoroIntervals, setPomodoroIntervals] = useState(4);
+  const [focusDuration, setFocusDuration] = useState(25);
+  const [shortBreakDuration, setShortBreakDuration] = useState(5);
+  const [longBreakDuration, setLongBreakDuration] = useState(15);
   const [onBreak, setOnBreak] = useState(false);
 
   const wsRef = useRef(null);
   const intervalRef = useRef(null);
+  const breakNoticeFiredRef = useRef(false);
+
+  const updatePomodoroIntervals = useCallback(async (n) => {
+    setPomodoroIntervals(n);
+    try {
+      await updateSettings({ pomodoro_intervals: n });
+    } catch (e) {}
+  }, []);
 
   const start = useCallback(async (minutes = 25, mode = 'standard') => {
     try {
@@ -36,8 +49,8 @@ export function SessionProvider({ children }) {
       setOnBreak(false);
       
       if (mode === 'pomodoro') {
-        setTotalTime(25 * 60);
-        setTimeLeft(25 * 60);
+        setTotalTime(focusDuration * 60);
+        setTimeLeft(focusDuration * 60);
         setPomodoroCycle(1);
       } else {
         setTotalTime(minutes * 60);
@@ -50,7 +63,7 @@ export function SessionProvider({ children }) {
       setIsActive(true);
       setIsPaused(false);
     }
-  }, [isActive]);
+  }, [isActive, focusDuration]);
 
   const pause = useCallback(async () => {
     try {
@@ -71,7 +84,7 @@ export function SessionProvider({ children }) {
     const elapsedSeconds = totalTime - timeLeft;
     if (isActive && !onBreak && elapsedSeconds >= 60) {
       const minutes = Math.floor(elapsedSeconds / 60);
-      const xpReward = minutes * 5;
+      const xpReward = Math.floor(minutes * 0.5); // 10x slower than original 5x
       if (xpReward > 0) {
         addXP(xpReward);
         window.dispatchEvent(new Event('storage'));
@@ -92,9 +105,9 @@ export function SessionProvider({ children }) {
     setTimerMode('standard');
     setPomodoroState('focus');
     setPomodoroCycle(1);
-    setTimeLeft(25 * 60);
-    setTotalTime(25 * 60);
-  }, [isActive, onBreak, totalTime, timeLeft]);
+    setTimeLeft(focusDuration * 60);
+    setTotalTime(focusDuration * 60);
+  }, [isActive, onBreak, totalTime, timeLeft, focusDuration]);
 
   const dismissAlert = useCallback(() => setAlert(null), []);
 
@@ -107,6 +120,25 @@ export function SessionProvider({ children }) {
 
   // Poll backend session status on mount to sync across pages
   useEffect(() => {
+    const fetchSettings = () => {
+      getSettings().then((s) => {
+        if (s.pomodoro_intervals) setPomodoroIntervals(s.pomodoro_intervals);
+        if (s.short_break_duration) setShortBreakDuration(s.short_break_duration);
+        if (s.long_break_duration) setLongBreakDuration(s.long_break_duration);
+        if (s.focus_duration) {
+          setFocusDuration(s.focus_duration);
+          // Auto-update timer display if currently inactive and in standard/pomodoro modes
+          if (!isActive && !isPaused && !onBreak && timerMode !== 'custom') {
+            setTimeLeft(s.focus_duration * 60);
+            setTotalTime(s.focus_duration * 60);
+          }
+        }
+      }).catch(() => {});
+    };
+    
+    fetchSettings();
+    window.addEventListener('settingsUpdated', fetchSettings);
+
     sessionStatus().then((s) => {
       if (s.is_active) {
         setIsActive(true);
@@ -116,6 +148,8 @@ export function SessionProvider({ children }) {
         }
       }
     }).catch(() => {});
+    
+    return () => window.removeEventListener('settingsUpdated', fetchSettings);
   }, []);
 
   // Handle Pomodoro automatic transitions when timer ends
@@ -137,52 +171,57 @@ export function SessionProvider({ children }) {
     if (pomodoroState === 'focus') {
       // Focus ended -> Start Break
       // Reward XP for completing Pomodoro Focus cycle!
-      const xpReward = 25 * 5; // 25 minutes * 5 XP = 125 XP!
+      const xpReward = Math.floor(focusDuration * 0.5); // 10x slower than original 125
       addXP(xpReward);
       window.dispatchEvent(new Event('storage'));
       
       if (Notification.permission === 'granted') {
         new Notification("Pomodoro Cycle Completed! 🎉", {
-          body: `Superb! You finished your 25-minute Pomodoro focus interval and earned +${xpReward} XP!`
+          body: `Superb! You finished your ${focusDuration}-minute Pomodoro focus interval and earned +${xpReward} XP!`
         });
       }
 
       if (pomodoroCycle >= pomodoroIntervals) {
         setPomodoroState('long_break');
         setOnBreak(true);
-        setTimeLeft(15 * 60);
-        setTotalTime(15 * 60);
+        setTimeLeft(longBreakDuration * 60);
+        setTotalTime(longBreakDuration * 60);
         try { await apiPause(); } catch {}
         if (Notification.permission === 'granted') {
-          new Notification("Long Break Started ☕", { body: "Amazing work completing 4 focus cycles! Take a 15-minute long break." });
+          new Notification("Long Break Started 🌟", { body: `Time for a ${longBreakDuration}-minute break!` });
         }
       } else {
         setPomodoroState('short_break');
         setOnBreak(true);
-        setTimeLeft(5 * 60);
-        setTotalTime(5 * 60);
+        setTimeLeft(shortBreakDuration * 60);
+        setTotalTime(shortBreakDuration * 60);
         try { await apiPause(); } catch {}
         if (Notification.permission === 'granted') {
-          new Notification("Short Break Started ⚡", { body: "Time for a 5-minute break. Stretch and relax!" });
+          new Notification("Short Break Started ⚡", { body: `Time for a ${shortBreakDuration}-minute break. Stretch and relax!` });
         }
       }
     } else {
+      if (pomodoroState === 'long_break') {
+        stop();
+        if (Notification.permission === 'granted') {
+          new Notification("Session Complete! 🏆", { body: "You've completed your Pomodoro session." });
+        }
+        return;
+      }
+
       // Break ended -> Start Focus
       setPomodoroState('focus');
       setOnBreak(false);
-      setTimeLeft(25 * 60);
-      setTotalTime(25 * 60);
-      if (pomodoroState === 'long_break') {
-        setPomodoroCycle(1);
-      } else {
-        setPomodoroCycle((c) => c + 1);
-      }
+      setTimeLeft(focusDuration * 60);
+      setTotalTime(focusDuration * 60);
+      setPomodoroCycle((c) => c + 1);
+      
       try { await apiResume(); } catch {}
       if (Notification.permission === 'granted') {
         new Notification("Focus Session Started 🎯", { body: "Break's over! Let's get back to work." });
       }
     }
-  }, [pomodoroState, pomodoroCycle, pomodoroIntervals]);
+  }, [pomodoroState, pomodoroCycle, pomodoroIntervals, focusDuration, shortBreakDuration, longBreakDuration, stop]);
 
   // Timer countdown - Fix for 50-60 min timer bug (interval drift)
   const timerExpectedEndRef = useRef(null);
@@ -202,9 +241,17 @@ export function SessionProvider({ children }) {
         
         setTimeLeft(remainingSeconds);
 
+        if (remainingSeconds === 15 && onBreak && !breakNoticeFiredRef.current) {
+          breakNoticeFiredRef.current = true;
+          if (Notification.permission === 'granted') {
+            new Notification("Break ending soon! ⏳", { body: "Your break will be over in 15 seconds. Get ready!" });
+          }
+        }
+
         if (remainingSeconds === 0) {
           clearInterval(intervalRef.current);
           timerExpectedEndRef.current = null;
+          breakNoticeFiredRef.current = false;
           
           if (timerMode === 'pomodoro') {
             handlePomodoroTransition();
@@ -267,7 +314,8 @@ export function SessionProvider({ children }) {
     <SessionContext.Provider value={{
       isActive, isPaused, timeLeft, totalTime, progress, alert,
       timerMode, pomodoroState, pomodoroCycle, pomodoroIntervals, onBreak,
-      start, pause, resume, stop, dismissAlert, setTimeLeft, setTotalTime, setPomodoroIntervals
+      focusDuration, shortBreakDuration, longBreakDuration,
+      start, pause, resume, stop, dismissAlert, setTimeLeft, setTotalTime, setPomodoroIntervals: updatePomodoroIntervals
     }}>
       {children}
     </SessionContext.Provider>

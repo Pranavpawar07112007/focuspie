@@ -1,12 +1,12 @@
-const { app, BrowserWindow, dialog } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain } = require('electron');
 const { spawn, execSync } = require('child_process');
 const path = require('path');
 const http = require('http');
 
 // ─── Configuration ──────────────────────────────────────────────────
 const BACKEND_PORT = 8000;
-const HEALTH_URL = `http://localhost:${BACKEND_PORT}/api/health`;
-const MAX_RETRIES = 30;       // 30 retries × 500ms = 15 seconds max wait
+const HEALTH_URL = `http://127.0.0.1:${BACKEND_PORT}/api/health`;
+const MAX_RETRIES = 120;       // 120 retries × 500ms = 60 seconds max wait
 const RETRY_INTERVAL = 500;   // ms between health checks
 
 let mainWindow = null;
@@ -34,18 +34,20 @@ function getFrontendPath() {
 // ─── Splash Screen ──────────────────────────────────────────────────
 function createSplashWindow() {
   splashWindow = new BrowserWindow({
-    width: 400,
-    height: 300,
+    width: 1400,
+    height: 900,
+    transparent: false,
     frame: false,
-    transparent: true,
-    resizable: false,
-    alwaysOnTop: true,
+    alwaysOnTop: false,
+    backgroundColor: '#ffffff',
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
+      preload: path.join(__dirname, 'splash_preload.js'),
     },
   });
 
+  splashWindow.maximize();
   splashWindow.loadFile(path.join(__dirname, 'splash.html'));
   splashWindow.center();
 }
@@ -111,11 +113,12 @@ function startBackend() {
 
     backendProcess.on('error', (err) => {
       console.error(`[Electron] Failed to start backend:`, err);
-      dialog.showErrorBox(
-        'FocusPie Error',
-        `Failed to start the backend server.\n\n${err.message}\n\nPlease reinstall the application.`
-      );
-      app.quit();
+      if (splashWindow) {
+        splashWindow.webContents.send('startup-error', `Failed to start the backend server.\n\n${err.message}\n\nPlease verify Python and dependencies are correctly installed.`);
+      } else {
+        dialog.showErrorBox('FocusPie Error', `Failed to start the backend server.\n\n${err.message}`);
+        app.quit();
+      }
     });
 
     backendProcess.on('exit', (code, signal) => {
@@ -127,11 +130,12 @@ function startBackend() {
     });
   } catch (err) {
     console.error('[Electron] Exception starting backend:', err);
-    dialog.showErrorBox(
-      'FocusPie Error',
-      `Could not locate backend server.\n\nExpected at: ${backendPath}\n\nPlease rebuild or reinstall.`
-    );
-    app.quit();
+    if (splashWindow) {
+      splashWindow.webContents.send('startup-error', `Could not locate backend server.\nExpected at: ${backendPath}\n\nPlease rebuild or reinstall.`);
+    } else {
+      dialog.showErrorBox('FocusPie Error', `Could not locate backend server.\n\nExpected at: ${backendPath}`);
+      app.quit();
+    }
   }
 }
 
@@ -182,7 +186,11 @@ function waitForServer(retries = 0) {
 
 function retryOrFail(retries, resolve, reject) {
   if (retries >= MAX_RETRIES) {
-    reject(new Error('Backend server failed to start within 15 seconds'));
+    const errorMsg = 'Backend server failed to start within 60 seconds. Please ensure you have Python installed, or check for port conflicts on 8000.';
+    if (splashWindow) {
+      splashWindow.webContents.send('startup-error', errorMsg);
+    }
+    reject(new Error(errorMsg));
     return;
   }
   setTimeout(() => {
@@ -233,6 +241,55 @@ function setupAutoUpdater() {
   autoUpdater.checkForUpdatesAndNotify();
 }
 
+// IPC Handlers for updates
+ipcMain.handle('get-app-version', () => app.getVersion());
+
+let isManualCheck = false;
+
+ipcMain.handle('check-for-updates', async () => {
+  isManualCheck = true;
+  try {
+    const result = await autoUpdater.checkForUpdatesAndNotify();
+    if (!result) {
+      dialog.showMessageBox({
+        type: 'info',
+        title: 'Check for Updates',
+        message: 'Updates are not available in development mode or the app is un-packaged.',
+        buttons: ['OK']
+      });
+      return { success: true, result: null };
+    }
+    return { success: true, result };
+  } catch (error) {
+    isManualCheck = false;
+    return { success: false, error: error.message };
+  }
+});
+
+autoUpdater.on('update-not-available', (info) => {
+  console.log('[Updater] App is up to date.');
+  if (isManualCheck) {
+    dialog.showMessageBox({
+      type: 'info',
+      title: 'Up to Date',
+      message: 'You are already running the latest version of FocusPie.',
+      buttons: ['OK']
+    });
+    isManualCheck = false;
+  }
+});
+
+autoUpdater.on('update-available', (info) => {
+  console.log('[Updater] Update available:', info.version);
+  isManualCheck = false; // Reset it since standard UI takes over
+});
+
+// IPC Handler for Splash
+ipcMain.on('quit-app', () => {
+  killBackend();
+  app.quit();
+});
+
 
 // ─── App Lifecycle ──────────────────────────────────────────────────
 app.whenReady().then(async () => {
@@ -247,15 +304,8 @@ app.whenReady().then(async () => {
     await waitForServer();
   } catch (err) {
     console.error('[Electron] Backend startup failed:', err);
-    if (splashWindow) {
-      splashWindow.close();
-    }
-    dialog.showErrorBox(
-      'FocusPie Startup Error',
-      'The backend server failed to start.\n\nPlease check the console for errors and try again.'
-    );
     killBackend();
-    app.quit();
+    // Splash screen handles the error display now
     return;
   }
 

@@ -18,12 +18,20 @@ export function AuthProvider({ children }) {
           setUser(userData);
           localStorage.setItem('focuspie_user', JSON.stringify(userData));
         })
-        .catch(() => {
-          // Token invalid
-          setToken(null);
-          setUser(null);
-          localStorage.removeItem('focuspie_token');
-          localStorage.removeItem('focuspie_user');
+        .catch((err) => {
+          // Only clear token if unauthorized. Network errors should keep the token.
+          if (err.response?.status === 401) {
+            setToken(null);
+            setUser(null);
+            localStorage.removeItem('focuspie_token');
+            localStorage.removeItem('focuspie_user');
+          } else {
+            // Optimistically assume user is logged in if network fails but token exists
+            try {
+              const savedUser = JSON.parse(localStorage.getItem('focuspie_user'));
+              if (savedUser) setUser(savedUser);
+            } catch (e) {}
+          }
         })
         .finally(() => setIsLoading(false));
     } else {

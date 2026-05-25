@@ -5,13 +5,15 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useSession } from '../context/SessionContext';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
+import InteractiveAvatar from './InteractiveAvatar';
+import { getXP, getLevelData, getStreak } from '../utils';
+import { getSettings } from '../api';
 
 const navItems = [
   { to: '/',         icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/tasks',    icon: ListChecks,      label: 'Tasks' },
   { to: '/insights', icon: BarChart3,       label: 'Insights' },
   { to: '/calendar', icon: CalendarDays,    label: 'Calendar' },
-  { to: '/settings', icon: Settings,        label: 'Settings' },
 ];
 
 function NavItem({ to, icon: Icon, label }) {
@@ -44,19 +46,68 @@ function NavItem({ to, icon: Icon, label }) {
 }
 
 export default function Layout({ children }) {
-  const { isActive: sessionActive } = useSession();
+  const { isActive: sessionActive, onBreak } = useSession();
   const { theme, toggleTheme } = useTheme();
   const { user, logout } = useAuth();
+  
+  // Avatar States
+  const [avatarStyle, setAvatarStyle] = React.useState('fox');
+  const [xp, setXp] = React.useState(() => getXP());
+  const [streak, setStreak] = React.useState(() => getStreak());
+
+  React.useEffect(() => {
+    const fetchSettings = () => getSettings().then(s => setAvatarStyle(s.avatar_style || 'fox')).catch(() => {});
+    fetchSettings();
+    window.addEventListener('settingsUpdated', fetchSettings);
+    
+    const handleStorageChange = () => {
+      setXp(getXP());
+      setStreak(getStreak());
+    };
+    window.addEventListener('storage', handleStorageChange);
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('settingsUpdated', fetchSettings);
+    };
+  }, []);
+
+  const levelData = getLevelData(xp);
+  const avatarSessionState = sessionActive ? (onBreak ? 'break' : 'focusing') : 'idle';
   const location = useLocation();
 
   return (
-    <div className="min-h-screen bg-white dark:bg-[#050a18] transition-colors duration-300">
+    <div className="min-h-screen transition-colors duration-300">
 
       {/* ── Ambient Background ──────────────────────── */}
       <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
-        <div className="absolute -top-[40%] -left-[20%] w-[60vw] h-[60vw] rounded-full bg-brand-blue/[0.04] blur-[120px] animate-float" />
-        <div className="absolute -bottom-[30%] -right-[15%] w-[50vw] h-[50vw] rounded-full bg-brand-purple/[0.04] blur-[120px] animate-float-delay" />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[40vw] h-[40vw] rounded-full bg-brand-cyan/[0.02] blur-[100px]" />
+        <div className="absolute -top-[20%] -left-[10%] w-[50vw] h-[50vw] rounded-full bg-brand-blue/10 blur-[120px] animate-float mix-blend-multiply dark:mix-blend-screen" />
+        <div className="absolute top-[20%] -right-[15%] w-[45vw] h-[45vw] rounded-full bg-brand-purple/10 blur-[120px] animate-float mix-blend-multiply dark:mix-blend-screen" style={{ animationDelay: '2s' }} />
+        <div className="absolute -bottom-[20%] left-[10%] w-[40vw] h-[40vw] rounded-full bg-brand-cyan/10 blur-[100px] animate-float mix-blend-multiply dark:mix-blend-screen" style={{ animationDelay: '1s' }} />
+        <div className="absolute bottom-[10%] -right-[10%] w-[35vw] h-[35vw] rounded-full bg-brand-rose/10 blur-[100px] animate-float mix-blend-multiply dark:mix-blend-screen" style={{ animationDelay: '3s' }} />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[30vw] h-[30vw] rounded-full bg-brand-yellow/10 blur-[120px] animate-float mix-blend-multiply dark:mix-blend-screen" style={{ animationDelay: '4s' }} />
+        
+        {/* Floating particles */}
+        {Array.from({ length: 15 }).map((_, i) => (
+          <motion.div
+            key={i}
+            className="absolute rounded-full bg-brand-blue/30 dark:bg-brand-blue/20"
+            style={{
+              width: Math.random() * 6 + 2 + 'px',
+              height: Math.random() * 6 + 2 + 'px',
+              top: Math.random() * 100 + '%',
+              left: Math.random() * 100 + '%',
+            }}
+            animate={{
+              y: [0, -100, 0],
+              opacity: [0.2, 0.8, 0.2],
+            }}
+            transition={{
+              duration: Math.random() * 10 + 10,
+              repeat: Infinity,
+              ease: "linear"
+            }}
+          />
+        ))}
       </div>
 
       {/* ── Top Floating Glassmorphic Navbar ─────────── */}
@@ -114,36 +165,32 @@ export default function Layout({ children }) {
             })}
           </nav>
 
-          {/* User Badge */}
+          {/* User Avatar Companion */}
           {user && (
-            <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-slate-100/70 dark:bg-white/[0.04] border border-slate-200/30 dark:border-white/[0.05]">
-              <div className="w-5 h-5 rounded-full bg-gradient-to-br from-brand-blue to-brand-purple flex items-center justify-center">
-                <span className="text-[9px] font-bold text-white uppercase">{user.username?.[0]}</span>
-              </div>
-              <span className="text-[10px] font-semibold text-slate-600 dark:text-slate-400 max-w-[60px] truncate">
-                {user.username}
-              </span>
+            <div className="hidden sm:block cursor-pointer hover:scale-105 transition-transform" title={`${user.username}'s Companion`}>
+              <InteractiveAvatar 
+                avatarStyle={avatarStyle} 
+                sessionState={avatarSessionState} 
+                level={levelData.level} 
+                streak={streak.count} 
+              />
             </div>
           )}
 
-          {/* Micro-Animated Premium Theme Toggle */}
-          <button
-            onClick={toggleTheme}
-            className="p-2.5 rounded-xl bg-slate-100 dark:bg-white/[0.03] border border-slate-200/50 dark:border-white/[0.04] text-slate-700 dark:text-slate-400 hover:text-brand-blue dark:hover:text-white hover:bg-slate-200 dark:hover:bg-white/[0.06] hover:scale-105 transition-all duration-300 relative overflow-hidden cursor-pointer"
-            title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+          {/* Settings Gear */}
+          <NavLink
+            to="/settings"
+            className={({ isActive }) => 
+              `p-2.5 rounded-xl border transition-all duration-300 relative overflow-hidden cursor-pointer
+              ${isActive 
+                ? 'bg-brand-blue/10 border-brand-blue/20 text-brand-blue' 
+                : 'bg-slate-100 dark:bg-white/[0.03] border-slate-200/50 dark:border-white/[0.04] text-slate-700 dark:text-slate-400 hover:text-brand-blue dark:hover:text-white hover:bg-slate-200 dark:hover:bg-white/[0.06] hover:scale-105'
+              }`
+            }
+            title="Settings"
           >
-            <AnimatePresence mode="wait" initial={false}>
-              <motion.div
-                key={theme}
-                initial={{ y: -15, opacity: 0, rotate: -40 }}
-                animate={{ y: 0, opacity: 1, rotate: 0 }}
-                exit={{ y: 15, opacity: 0, rotate: 40 }}
-                transition={{ duration: 0.2, ease: "easeInOut" }}
-              >
-                {theme === 'dark' ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-brand-blue" />}
-              </motion.div>
-            </AnimatePresence>
-          </button>
+            <Settings className="w-4 h-4 transition-transform duration-500 hover:rotate-90" />
+          </NavLink>
         </div>
 
       </header>

@@ -43,8 +43,10 @@ class UserSettings(Base):
     focus_duration = Column(Integer, default=25)        # minutes
     short_break_duration = Column(Integer, default=5)   # minutes
     long_break_duration = Column(Integer, default=15)   # minutes
+    pomodoro_intervals = Column(Integer, default=4)
     distraction_keywords = Column(Text, default='["YouTube","Netflix","Twitch","Facebook","Instagram","Reddit","Twitter","x.com","Pinterest","LinkedIn","WhatsApp","Discord","Spotify","Steam","Roblox","TikTok"]')
     theme = Column(String, default="light")
+    avatar_style = Column(String, default="fox")
 
     user = relationship("User", back_populates="settings")
 
@@ -167,12 +169,16 @@ class UserSettingsResponse(BaseModel):
     focus_duration: int
     short_break_duration: int
     long_break_duration: int
+    pomodoro_intervals: int
     distraction_keywords: List[str]
     theme: str
+    avatar_style: str
 
 class UserSettingsUpdate(BaseModel):
     focus_duration: Optional[int] = None
     short_break_duration: Optional[int] = None
     long_break_duration: Optional[int] = None
+    pomodoro_intervals: Optional[int] = None
     distraction_keywords: Optional[List[str]] = None
     theme: Optional[str] = None
+    avatar_style: Optional[str] = None

@@ -31,9 +31,10 @@
 
 /* ── Keyframes ─────────────────────────────────────── */
 @keyframes float {
-  0%, 100% { transform: translateY(0px) rotate(0deg); }
-  33% { transform: translateY(-8px) rotate(1deg); }
-  66% { transform: translateY(4px) rotate(-1deg); }
+  0%, 100% { transform: translate(0, 0) scale(1) rotate(0deg); }
+  25% { transform: translate(5vw, -5vh) scale(1.2) rotate(15deg); }
+  50% { transform: translate(-5vw, 10vh) scale(0.9) rotate(-5deg); }
+  75% { transform: translate(-10vw, -10vh) scale(1.1) rotate(5deg); }
 }
 
 @keyframes pulse-glow {

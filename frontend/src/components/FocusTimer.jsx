@@ -25,7 +25,10 @@ export default function FocusTimer() {
     stop, 
     setTimeLeft, 
     setTotalTime,
-    setPomodoroIntervals
+    setPomodoroIntervals,
+    focusDuration,
+    shortBreakDuration,
+    longBreakDuration
   } = useSession();
 
   const [activeTab, setActiveTab] = useState('standard'); // 'standard', 'pomodoro', 'custom'
@@ -43,11 +46,11 @@ export default function FocusTimer() {
     if (isActive) return;
     setActiveTab(tab);
     if (tab === 'standard') {
-      setTimeLeft(25 * 60);
-      setTotalTime(25 * 60);
+      setTimeLeft(focusDuration * 60);
+      setTotalTime(focusDuration * 60);
     } else if (tab === 'pomodoro') {
-      setTimeLeft(25 * 60);
-      setTotalTime(25 * 60);
+      setTimeLeft(focusDuration * 60);
+      setTotalTime(focusDuration * 60);
     } else if (tab === 'custom') {
       setTimeLeft(customMinutes * 60);
       setTotalTime(customMinutes * 60);
@@ -56,11 +59,11 @@ export default function FocusTimer() {
 
   const handleStart = () => {
     if (currentTab === 'pomodoro') {
-      start(25, 'pomodoro');
+      start(focusDuration, 'pomodoro');
     } else if (currentTab === 'custom') {
       start(customMinutes, 'standard');
     } else {
-      start(25, 'standard');
+      start(focusDuration, 'standard');
     }
   };
 
@@ -213,7 +216,7 @@ export default function FocusTimer() {
           <span className="text-[10px] text-slate-500 font-medium">
             {isActive 
               ? `${onBreak ? 'Resting' : 'Focusing'} on Interval ${pomodoroCycle} of ${pomodoroIntervals}`
-              : `${pomodoroIntervals} Intervals (25m Focus / 5m Break)`
+              : `${pomodoroIntervals} Intervals (${focusDuration}m Focus / ${shortBreakDuration}m Break)`
             }
           </span>
         </div>

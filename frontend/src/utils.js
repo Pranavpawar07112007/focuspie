@@ -118,25 +118,36 @@ export function playSound(type) {
 }
 
 // ─── Focus XP & Leveling Gamification Layer ───────────────────────────
+function getUserId() {
+  try {
+    const user = JSON.parse(localStorage.getItem('focuspie_user'));
+    return user?.username || 'anonymous';
+  } catch (e) {
+    return 'anonymous';
+  }
+}
+
 export function getXP() {
-  return parseInt(localStorage.getItem('focus_xp') || '0', 10);
+  const userId = getUserId();
+  return parseInt(localStorage.getItem(`focus_xp_${userId}`) || '0', 10);
 }
 
 export function addXP(amount) {
+  const userId = getUserId();
   const current = getXP();
   const next = current + amount;
-  localStorage.setItem('focus_xp', next.toString());
+  localStorage.setItem(`focus_xp_${userId}`, next.toString());
   
   // Return true if level up occurred
-  const currentLevel = Math.floor(Math.sqrt(current / 100)) + 1;
-  const nextLevel = Math.floor(Math.sqrt(next / 100)) + 1;
+  const currentLevel = Math.floor(Math.log2(current / 500 + 1)) + 1;
+  const nextLevel = Math.floor(Math.log2(next / 500 + 1)) + 1;
   return nextLevel > currentLevel;
 }
 
 export function getLevelData(xp) {
-  const level = Math.floor(Math.sqrt(xp / 100)) + 1;
-  const currentLevelThreshold = 100 * Math.pow(level - 1, 2);
-  const nextLevelThreshold = 100 * Math.pow(level, 2);
+  const level = Math.floor(Math.log2(xp / 500 + 1)) + 1;
+  const currentLevelThreshold = 500 * (Math.pow(2, level - 1) - 1);
+  const nextLevelThreshold = 500 * (Math.pow(2, level) - 1);
   const levelXP = xp - currentLevelThreshold;
   const levelTotalNeeded = nextLevelThreshold - currentLevelThreshold;
   const progress = Math.min(100, Math.max(0, (levelXP / levelTotalNeeded) * 100));
@@ -159,16 +170,29 @@ function getLevelTitle(level) {
     "Focus Elite",
     "Zen Flow Master",
     "Hyper-Focus Sage",
-    "Transcendent Flow Legend"
+    "Transcendent Flow Legend",
+    "Chronos Vanguard",
+    "Grandmaster of Concentration",
+    "The Unbreakable Mind",
+    "Apex of Productivity",
+    "Time Lord",
+    "Ascended Architect",
+    "Supreme Entity of Focus",
+    "God of Deep Work",
+    "Infinite Flow Sovereign",
+    "Singularity of Concentration",
+    "Omniscient Focus Avatar",
+    "The Unwavering Absolute"
   ];
   return titles[Math.min(level - 1, titles.length - 1)];
 }
 
 // ─── Daily Streak Tracker ─────────────────────────────────────────────
 export function getStreak() {
+  const userId = getUserId();
   const defaultStreak = { count: 0, lastDate: null, todayCompleted: false };
   try {
-    const data = localStorage.getItem('focus_streak');
+    const data = localStorage.getItem(`focus_streak_${userId}`);
     if (!data) return defaultStreak;
 
     const streak = JSON.parse(data);
@@ -203,7 +227,7 @@ export function getStreak() {
     }
 
     if (changed) {
-      localStorage.setItem('focus_streak', JSON.stringify(updated));
+      localStorage.setItem(`focus_streak_${userId}`, JSON.stringify(updated));
     }
     return updated;
   } catch (e) {
@@ -212,6 +236,7 @@ export function getStreak() {
 }
 
 export function completeDayStreak() {
+  const userId = getUserId();
   const streak = getStreak();
   const todayStr = new Date().toDateString();
 
@@ -234,6 +259,6 @@ export function completeDayStreak() {
   }
 
   const updated = { count: newCount, lastDate: todayStr, todayCompleted: true };
-  localStorage.setItem('focus_streak', JSON.stringify(updated));
+  localStorage.setItem(`focus_streak_${userId}`, JSON.stringify(updated));
   return updated;
 }

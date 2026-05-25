@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Settings, Clock, Shield, Palette, AlertTriangle, Download, Trash2,
-  Plus, X, Save, CheckCircle, FileJson, FileSpreadsheet, LogOut
+  Plus, X, Save, CheckCircle, FileJson, FileSpreadsheet, LogOut, Info, RefreshCw, Smile
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
@@ -21,6 +22,10 @@ export default function SettingsPage() {
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [deleting, setDeleting] = useState(false);
   const [exporting, setExporting] = useState(null);
+  
+  const [appVersion, setAppVersion] = useState('');
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [updateMessage, setUpdateMessage] = useState('');
 
   // Load settings on mount
   useEffect(() => {
@@ -41,6 +46,10 @@ export default function SettingsPage() {
         });
       })
       .finally(() => setLoading(false));
+      
+    if (window.electronAPI) {
+      window.electronAPI.getAppVersion().then(v => setAppVersion(v));
+    }
   }, []);
 
   const handleSave = useCallback(async (updatedSettings) => {
@@ -50,6 +59,7 @@ export default function SettingsPage() {
       setSettings(data);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
+      window.dispatchEvent(new Event('settingsUpdated'));
     } catch (err) {
       console.error('Failed to save settings:', err);
     } finally {
@@ -116,6 +126,24 @@ export default function SettingsPage() {
     toggleTheme();
     const newTheme = theme === 'light' ? 'dark' : 'light';
     handleSave({ ...settings, theme: newTheme });
+  };
+
+  const handleCheckUpdate = async () => {
+    if (!window.electronAPI) {
+      alert('Update checking is not available in the web version.');
+      return;
+    }
+    setCheckingUpdate(true);
+    try {
+      const res = await window.electronAPI.checkForUpdates();
+      if (!res.success) {
+        alert('Update check failed: ' + res.error);
+      }
+    } catch (err) {
+      alert('Error checking for updates.');
+    } finally {
+      setCheckingUpdate(false);
+    }
   };
 
   if (loading || !settings) {
@@ -299,6 +327,81 @@ export default function SettingsPage() {
         </div>
       </section>
 
+      {/* Interactive Avatar Companion */}
+      <section className="glass p-6" id="avatar-settings">
+        <div className="flex items-center gap-2 mb-5">
+          <Smile className="w-4.5 h-4.5 text-orange-500" />
+          <h3 className="text-sm font-display font-bold uppercase tracking-wider text-black dark:text-white">
+            Companion Avatar
+          </h3>
+        </div>
+        <p className="text-xs text-slate-500 mb-4">
+          Choose your companion. They will react to your focus sessions, levels, and streaks.
+        </p>
+
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+          {[
+            { value: 'fox', label: 'Firefox', icon: '🦊' },
+            { value: 'robot', label: 'Focus Bot', icon: '🤖' },
+            { value: 'wizard', label: 'Wizard', icon: '🧙‍♂️' },
+            { value: 'ninja', label: 'Ninja', icon: '🥷' },
+            { value: 'emoji', label: 'Emoji', icon: '🙂' },
+          ].map((avatar) => (
+            <button
+              key={avatar.value}
+              onClick={() => {
+                const updated = { ...settings, avatar_style: avatar.value };
+                setSettings(updated);
+                handleSave(updated);
+              }}
+              className={`flex flex-col items-center justify-center p-3 rounded-2xl border transition-all duration-200 cursor-pointer ${
+                settings.avatar_style === avatar.value
+                  ? 'bg-brand-blue/10 border-brand-blue/30 shadow-[0_0_12px_rgba(59,130,246,0.15)] scale-105'
+                  : 'bg-slate-50 dark:bg-white/[0.02] border-slate-200 dark:border-white/[0.05] hover:bg-slate-100 dark:hover:bg-white/[0.05]'
+              }`}
+            >
+              <span className="text-3xl mb-2">{avatar.icon}</span>
+              <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300">{avatar.label}</span>
+            </button>
+          ))}
+        </div>
+      </section>
+
+      {/* About & Updates */}
+      <section className="glass p-6" id="about-settings">
+        <div className="flex items-center gap-2 mb-5">
+          <Info className="w-4.5 h-4.5 text-brand-emerald" />
+          <h3 className="text-sm font-display font-bold uppercase tracking-wider text-black dark:text-white">
+            About & Updates
+          </h3>
+        </div>
+        
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-semibold text-black dark:text-white">FocusPie Version</p>
+            <p className="text-xs text-slate-500 mt-0.5">
+              {appVersion ? `v${appVersion}` : 'Web Version'}
+            </p>
+          </div>
+          <div className="flex flex-col items-end">
+            <button
+              onClick={handleCheckUpdate}
+              disabled={checkingUpdate || !window.electronAPI}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold
+                bg-slate-100 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08]
+                text-black dark:text-white hover:bg-brand-emerald/10 hover:text-brand-emerald hover:border-brand-emerald/30
+                disabled:opacity-50 transition-all duration-200"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${checkingUpdate ? 'animate-spin text-brand-emerald' : ''}`} />
+              Check for Updates
+            </button>
+            {updateMessage && (
+              <p className="text-[10px] text-brand-emerald mt-1 absolute -bottom-5">{updateMessage}</p>
+            )}
+          </div>
+        </div>
+      </section>
+
       {/* Danger Zone */}
       <section className="glass p-6 border-2 !border-brand-rose/20" id="danger-zone">
         <div className="flex items-center gap-2 mb-5">
@@ -384,81 +487,84 @@ export default function SettingsPage() {
       </div>
 
       {/* Delete Confirmation Modal */}
-      <AnimatePresence>
-        {showDeleteModal && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm"
-            onClick={() => setShowDeleteModal(false)}
-          >
+      {createPortal(
+        <AnimatePresence>
+          {showDeleteModal && (
             <motion.div
-              initial={{ scale: 0.9, y: 20 }}
-              animate={{ scale: 1, y: 0 }}
-              exit={{ scale: 0.9, y: 20 }}
-              className="glass p-6 max-w-sm mx-4 border-2 !border-brand-rose/30"
-              onClick={(e) => e.stopPropagation()}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm"
+              onClick={() => setShowDeleteModal(false)}
             >
-              <div className="flex items-center gap-2 mb-4">
-                <div className="w-10 h-10 rounded-full bg-brand-rose/10 flex items-center justify-center">
-                  <AlertTriangle className="w-5 h-5 text-brand-rose" />
+              <motion.div
+                initial={{ scale: 0.9, y: 20 }}
+                animate={{ scale: 1, y: 0 }}
+                exit={{ scale: 0.9, y: 20 }}
+                className="glass p-6 max-w-sm mx-4 border-2 !border-brand-rose/30"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center gap-2 mb-4">
+                  <div className="w-10 h-10 rounded-full bg-brand-rose/10 flex items-center justify-center">
+                    <AlertTriangle className="w-5 h-5 text-brand-rose" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-display font-bold text-brand-rose">Confirm Deletion</h3>
+                    <p className="text-xs text-slate-500">This action is permanent</p>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="text-sm font-display font-bold text-brand-rose">Confirm Deletion</h3>
-                  <p className="text-xs text-slate-500">This action is permanent</p>
-                </div>
-              </div>
 
-              <p className="text-xs text-slate-600 dark:text-slate-400 mb-4">
-                Type <span className="font-bold text-brand-rose">{user?.username}</span> to confirm account deletion.
-              </p>
+                <p className="text-xs text-slate-600 dark:text-slate-400 mb-4">
+                  Type <span className="font-bold text-brand-rose">{user?.username}</span> to confirm account deletion.
+                </p>
 
-              <input
-                id="delete-confirm-input"
-                type="text"
-                placeholder="Type username to confirm"
-                value={deleteConfirmText}
-                onChange={(e) => setDeleteConfirmText(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl text-sm font-medium mb-4
-                  bg-slate-50 dark:bg-white/[0.04] border border-brand-rose/20
-                  text-black dark:text-white placeholder-slate-400
-                  focus:outline-none focus:ring-2 focus:ring-brand-rose/30 focus:border-brand-rose/50
-                  transition-all duration-200"
-              />
-
-              <div className="flex gap-2">
-                <button
-                  onClick={() => { setShowDeleteModal(false); setDeleteConfirmText(''); }}
-                  className="flex-1 px-4 py-2.5 rounded-xl font-semibold text-xs
-                    bg-slate-100 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08]
-                    text-black dark:text-white hover:bg-slate-200 transition-all duration-200"
-                >
-                  Cancel
-                </button>
-                <button
-                  id="confirm-delete-btn"
-                  onClick={handleDeleteAccount}
-                  disabled={deleteConfirmText !== user?.username || deleting}
-                  className="flex-1 flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl font-semibold text-xs
-                    bg-brand-rose text-white hover:bg-brand-rose-light
-                    disabled:opacity-40 disabled:cursor-not-allowed
+                <input
+                  id="delete-confirm-input"
+                  type="text"
+                  placeholder="Type username to confirm"
+                  value={deleteConfirmText}
+                  onChange={(e) => setDeleteConfirmText(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl text-sm font-medium mb-4
+                    bg-slate-50 dark:bg-white/[0.04] border border-brand-rose/20
+                    text-black dark:text-white placeholder-slate-400
+                    focus:outline-none focus:ring-2 focus:ring-brand-rose/30 focus:border-brand-rose/50
                     transition-all duration-200"
-                >
-                  {deleting ? (
-                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  ) : (
-                    <>
-                      <Trash2 className="w-3.5 h-3.5" />
-                      Delete Forever
-                    </>
-                  )}
-                </button>
-              </div>
+                />
+
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => { setShowDeleteModal(false); setDeleteConfirmText(''); }}
+                    className="flex-1 px-4 py-2.5 rounded-xl font-semibold text-xs
+                      bg-slate-100 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08]
+                      text-black dark:text-white hover:bg-slate-200 transition-all duration-200"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    id="confirm-delete-btn"
+                    onClick={handleDeleteAccount}
+                    disabled={deleteConfirmText !== user?.username || deleting}
+                    className="flex-1 flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl font-semibold text-xs
+                      bg-brand-rose text-white hover:bg-brand-rose-light
+                      disabled:opacity-40 disabled:cursor-not-allowed
+                      transition-all duration-200"
+                  >
+                    {deleting ? (
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    ) : (
+                      <>
+                        <Trash2 className="w-3.5 h-3.5" />
+                        Delete Forever
+                      </>
+                    )}
+                  </button>
+                </div>
+              </motion.div>
             </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+          )}
+        </AnimatePresence>,
+        document.body
+      )}
     </div>
   );
 }

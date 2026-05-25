@@ -51,7 +51,7 @@ export default function TaskModal({ isOpen, onClose, onSubmit }) {
         animate={{ scale: 1, y: 0, opacity: 1 }}
         exit={{ scale: 0.95, y: 10, opacity: 0 }}
         transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-        className="glass w-full max-w-md p-6 relative border border-slate-200 dark:border-white/[0.08]"
+        className="glass w-full max-w-md p-8 rounded-[2rem] relative border border-slate-200 dark:border-white/[0.08]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Close */}
@@ -87,7 +87,7 @@ export default function TaskModal({ isOpen, onClose, onSubmit }) {
               placeholder="What do you need to do?"
               required
               autoFocus
-              className="w-full bg-slate-100 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-xl py-3 px-4
+              className="w-full bg-slate-100 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-2xl py-3 px-4
                 text-sm text-black dark:text-white placeholder-slate-400 dark:placeholder-slate-600
                 focus:outline-none focus:border-brand-blue/40 focus:shadow-[0_0_0_3px_rgba(59,130,246,0.08)]
                 transition-all"
@@ -105,7 +105,7 @@ export default function TaskModal({ isOpen, onClose, onSubmit }) {
                   key={p.value}
                   type="button"
                   onClick={() => setPriority(p.value)}
-                  className="flex-1 py-2.5 rounded-xl text-xs font-semibold transition-all duration-200 border cursor-pointer"
+                  className="flex-1 py-2.5 rounded-2xl text-xs font-semibold transition-all duration-200 border cursor-pointer"
                   style={{
                     background: priority === p.value ? p.bg : 'transparent',
                     borderColor: priority === p.value ? p.color + '40' : 'rgba(148,163,184,0.15)',
@@ -128,7 +128,7 @@ export default function TaskModal({ isOpen, onClose, onSubmit }) {
                 type="date"
                 value={deadlineDate}
                 onChange={(e) => setDeadlineDate(e.target.value)}
-                className="bg-slate-100 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-xl py-2.5 px-3
+                className="bg-slate-100 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-2xl py-2.5 px-3
                   text-sm text-black dark:text-white
                   focus:outline-none focus:border-brand-blue/40 transition-all"
               />
@@ -136,7 +136,7 @@ export default function TaskModal({ isOpen, onClose, onSubmit }) {
                 type="time"
                 value={deadlineTime}
                 onChange={(e) => setDeadlineTime(e.target.value)}
-                className="bg-slate-100 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-xl py-2.5 px-3
+                className="bg-slate-100 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-2xl py-2.5 px-3
                   text-sm text-black dark:text-white
                   focus:outline-none focus:border-brand-blue/40 transition-all"
               />
@@ -146,7 +146,7 @@ export default function TaskModal({ isOpen, onClose, onSubmit }) {
           {/* Submit */}
           <button
             type="submit"
-            className="w-full py-3 rounded-xl font-semibold text-sm
+            className="w-full py-3 rounded-2xl font-semibold text-sm
               bg-gradient-to-r from-brand-blue to-brand-blue-light text-white
               shadow-lg shadow-brand-blue/20
               hover:shadow-brand-blue/35 hover:scale-[1.01]
