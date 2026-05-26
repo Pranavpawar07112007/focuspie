@@ -18,6 +18,7 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [newKeyword, setNewKeyword] = useState('');
+  const [newBlockedSite, setNewBlockedSite] = useState('');
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [deleting, setDeleting] = useState(false);
@@ -42,6 +43,7 @@ export default function SettingsPage() {
             'Reddit', 'Twitter', 'x.com', 'Pinterest', 'LinkedIn',
             'WhatsApp', 'Discord', 'Spotify', 'Steam', 'Roblox', 'TikTok'
           ],
+          blocked_websites: [],
           theme: 'light',
         });
       })
@@ -85,6 +87,25 @@ export default function SettingsPage() {
     const updated = {
       ...settings,
       distraction_keywords: settings.distraction_keywords.filter(k => k !== kw),
+    };
+    setSettings(updated);
+    handleSave(updated);
+  };
+
+  const addBlockedSite = () => {
+    const site = newBlockedSite.trim().toLowerCase();
+    const blocked_websites = settings.blocked_websites || [];
+    if (!site || blocked_websites.includes(site)) return;
+    const updated = { ...settings, blocked_websites: [...blocked_websites, site] };
+    setSettings(updated);
+    setNewBlockedSite('');
+    handleSave(updated);
+  };
+
+  const removeBlockedSite = (site) => {
+    const updated = {
+      ...settings,
+      blocked_websites: (settings.blocked_websites || []).filter(s => s !== site),
     };
     setSettings(updated);
     handleSave(updated);
@@ -182,45 +203,6 @@ export default function SettingsPage() {
         </AnimatePresence>
       </div>
 
-      {/* Timer Settings */}
-      <section className="glass p-6" id="timer-settings">
-        <div className="flex items-center gap-2 mb-5">
-          <Clock className="w-4.5 h-4.5 text-brand-blue" />
-          <h3 className="text-sm font-display font-bold uppercase tracking-wider text-black dark:text-white">
-            Timer Durations
-          </h3>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
-          {[
-            { key: 'focus_duration', label: 'Focus', max: 180, unit: 'min', color: 'brand-blue' },
-            { key: 'short_break_duration', label: 'Short Break', max: 60, unit: 'min', color: 'brand-emerald' },
-            { key: 'long_break_duration', label: 'Long Break', max: 60, unit: 'min', color: 'brand-purple' },
-          ].map(({ key, label, max, color }) => (
-            <div key={key} className="space-y-2">
-              <div className="flex justify-between items-center">
-                <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{label}</span>
-                <span className={`text-sm font-bold text-${color}`}>{settings[key]}m</span>
-              </div>
-              <input
-                type="range"
-                min="1"
-                max={max}
-                value={settings[key]}
-                onChange={(e) => updateField(key, parseInt(e.target.value, 10))}
-                onMouseUp={() => handleSave()}
-                onTouchEnd={() => handleSave()}
-                className={`w-full h-1.5 bg-slate-200 dark:bg-white/10 rounded-lg appearance-none cursor-pointer accent-${color}`}
-              />
-              <div className="flex justify-between text-[10px] text-slate-400">
-                <span>1m</span>
-                <span>{max}m</span>
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
-
       {/* Distraction Keywords */}
       <section className="glass p-6" id="keyword-settings">
         <div className="flex items-center gap-2 mb-5">
@@ -279,6 +261,82 @@ export default function SettingsPage() {
                 <span>{kw}</span>
                 <button
                   onClick={() => removeKeyword(kw)}
+                  className="w-4 h-4 rounded-full flex items-center justify-center
+                    opacity-50 group-hover:opacity-100 hover:bg-brand-rose/20
+                    transition-all duration-200"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </motion.div>
+            ))}
+          </AnimatePresence>
+        </div>
+      </section>
+
+      {/* Website Blocking */}
+      <section className="glass p-6" id="blocking-settings">
+        <div className="flex items-center gap-2 mb-5">
+          <Shield className="w-4.5 h-4.5 text-brand-rose" />
+          <h3 className="text-sm font-display font-bold uppercase tracking-wider text-black dark:text-white">
+            Website Blocking (Hosts File)
+          </h3>
+        </div>
+        <div className="mb-4">
+          <p className="text-xs text-slate-500">
+            These websites will be blocked system-wide when a focus session is active.
+          </p>
+          <div className="bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 p-2 rounded-lg mt-2 text-[10px] flex gap-1.5 items-start">
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+            <p>Note: Modifying the hosts file requires FocusPie backend to be running as Administrator.</p>
+          </div>
+        </div>
+
+        {/* Add new site */}
+        <div className="flex gap-2 mb-4">
+          <input
+            id="new-blocked-site-input"
+            type="text"
+            placeholder="e.g. youtube.com"
+            value={newBlockedSite}
+            onChange={(e) => setNewBlockedSite(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && addBlockedSite()}
+            className="flex-1 px-3.5 py-2.5 rounded-xl text-sm font-medium
+              bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08]
+              text-black dark:text-white placeholder-slate-400
+              focus:outline-none focus:ring-2 focus:ring-brand-blue/30 focus:border-brand-blue/50
+              transition-all duration-200"
+          />
+          <button
+            id="add-blocked-site-btn"
+            onClick={addBlockedSite}
+            disabled={!newBlockedSite.trim()}
+            className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl font-semibold text-xs
+              bg-brand-rose text-white hover:bg-brand-rose-light
+              disabled:opacity-40 disabled:cursor-not-allowed
+              transition-all duration-200 hover:scale-[1.03] active:scale-[0.97]"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            Add
+          </button>
+        </div>
+
+        {/* Blocked Sites tags */}
+        <div className="flex flex-wrap gap-2">
+          <AnimatePresence>
+            {(settings.blocked_websites || []).map((site) => (
+              <motion.div
+                key={site}
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.8 }}
+                layout
+                className="group flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold
+                  bg-brand-rose/8 text-brand-rose border border-brand-rose/15
+                  hover:bg-brand-rose/15 transition-all duration-200"
+              >
+                <span>{site}</span>
+                <button
+                  onClick={() => removeBlockedSite(site)}
                   className="w-4 h-4 rounded-full flex items-center justify-center
                     opacity-50 group-hover:opacity-100 hover:bg-brand-rose/20
                     transition-all duration-200"

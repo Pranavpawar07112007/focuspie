@@ -11,6 +11,7 @@ const RETRY_INTERVAL = 500;   // ms between health checks
 
 let mainWindow = null;
 let splashWindow = null;
+let miniPlayerWindow = null;
 let backendProcess = null;
 
 // ─── Resolve Paths ──────────────────────────────────────────────────
@@ -89,6 +90,61 @@ function createMainWindow() {
     mainWindow = null;
   });
 }
+
+
+// ─── Mini Player Window ─────────────────────────────────────────────
+function createMiniPlayerWindow() {
+  if (miniPlayerWindow) {
+    miniPlayerWindow.focus();
+    return;
+  }
+
+  miniPlayerWindow = new BrowserWindow({
+    width: 340,
+    height: 60,
+    minWidth: 280,
+    minHeight: 60,
+    alwaysOnTop: true,
+    frame: false,
+    transparent: true,
+    resizable: true,
+    show: false,
+    icon: path.join(__dirname, 'icon.png'),
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: path.join(__dirname, 'preload.js'),
+    },
+  });
+
+  const frontendPath = getFrontendPath();
+  miniPlayerWindow.loadURL(`file://${frontendPath}#/miniplayer`);
+
+  miniPlayerWindow.once('ready-to-show', () => {
+    miniPlayerWindow.show();
+    miniPlayerWindow.focus();
+    if (mainWindow) {
+      mainWindow.hide();
+    }
+  });
+
+  miniPlayerWindow.on('closed', () => {
+    miniPlayerWindow = null;
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.show();
+    }
+  });
+}
+
+ipcMain.on('open-miniplayer', () => {
+  createMiniPlayerWindow();
+});
+
+ipcMain.on('close-miniplayer', () => {
+  if (miniPlayerWindow) {
+    miniPlayerWindow.close();
+  }
+});
 
 
 // ─── Backend Process Management ─────────────────────────────────────

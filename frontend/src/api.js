@@ -2,7 +2,8 @@ import axios from 'axios';
 
 // ─── Base URL Configuration ──────────────────────────────────────────
 // Detect Electron environment and use localhost
-const API_BASE = 'http://localhost:8000/api';
+const HOST = window.location.hostname || 'localhost';
+const API_BASE = `http://${HOST}:8000/api`;
 
 const api = axios.create({ baseURL: API_BASE });
 
@@ -50,7 +51,7 @@ export const deleteAccount = () => api.delete('/data/delete-account').then(r => 
 export const checkHealth = () => api.get('/health').then(r => r.data);
 
 // ─── Session ──────────────────────────────────────────────────────────
-export const startSession  = () => api.post('/session/start').then(r => r.data);
+export const startSession  = (data) => api.post('/session/start', data).then(r => r.data);
 export const stopSession   = () => api.post('/session/stop').then(r => r.data);
 export const pauseSession  = () => api.post('/session/pause').then(r => r.data);
 export const resumeSession = () => api.post('/session/resume').then(r => r.data);
@@ -78,4 +79,16 @@ export const getCalendar = () => api.get('/calendar').then(r => r.data);
 export const getLiveTimeline = () => api.get('/session/live-timeline').then(r => r.data);
 
 // ─── WebSocket ────────────────────────────────────────────────────────
-export const WS_ALERTS = 'ws://localhost:8000/ws/alerts';
+export const WS_ALERTS = `ws://${HOST}:8000/ws/alerts`;
+export const WS_ROOMS = `ws://${HOST}:8000/ws/rooms`;
+
+// ─── Rooms ────────────────────────────────────────────────────────────
+export const createRoom  = (data) => api.post('/rooms', data).then(r => r.data);
+export const joinRoom    = (data) => api.post('/rooms/join', data).then(r => r.data);
+export const getRooms    = ()     => api.get('/rooms').then(r => r.data);
+export const getRoom     = (id)   => api.get(`/rooms/${id}`).then(r => r.data);
+export const leaveRoom   = (id)   => api.delete(`/rooms/${id}/leave`).then(r => r.data);
+export const deleteRoom  = (id)   => api.delete(`/rooms/${id}`).then(r => r.data);
+export const kickMember  = (roomId, userId) => api.delete(`/rooms/${roomId}/members/${userId}`).then(r => r.data);
+export const getRoomInsights = (id) => api.get(`/rooms/${id}/insights`).then(r => r.data);
+

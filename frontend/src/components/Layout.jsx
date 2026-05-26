@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
-import { LayoutDashboard, ListChecks, BarChart3, CalendarDays, Settings, Zap, Sun, Moon, LogOut, User } from 'lucide-react';
+import { LayoutDashboard, ListChecks, BarChart3, CalendarDays, Settings, Zap, Sun, Moon, LogOut, User, Users, Menu, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSession } from '../context/SessionContext';
 import { useTheme } from '../context/ThemeContext';
@@ -14,6 +14,7 @@ const navItems = [
   { to: '/tasks',    icon: ListChecks,      label: 'Tasks' },
   { to: '/insights', icon: BarChart3,       label: 'Insights' },
   { to: '/calendar', icon: CalendarDays,    label: 'Calendar' },
+  { to: '/rooms',    icon: Users,           label: 'Rooms' },
 ];
 
 function NavItem({ to, icon: Icon, label }) {
@@ -54,6 +55,7 @@ export default function Layout({ children }) {
   const [avatarStyle, setAvatarStyle] = React.useState('fox');
   const [xp, setXp] = React.useState(() => getXP());
   const [streak, setStreak] = React.useState(() => getStreak());
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState(false);
 
   React.useEffect(() => {
     const fetchSettings = () => getSettings().then(s => setAvatarStyle(s.avatar_style || 'fox')).catch(() => {});
@@ -145,25 +147,13 @@ export default function Layout({ children }) {
 
         {/* Right Section: User Badge, Mobile Nav & Theme Toggle */}
         <div className="flex items-center gap-3">
-          {/* Mobile Navigation */}
-          <nav className="flex md:hidden items-center gap-1">
-            {navItems.map((item) => {
-              const Icon = item.icon;
-              return (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  className={({ isActive }) =>
-                    `p-2 rounded-xl transition-all duration-300 relative
-                    ${isActive ? 'text-brand-blue bg-brand-blue/10' : 'text-slate-500 hover:text-black dark:hover:text-white'}`
-                  }
-                  title={item.label}
-                >
-                  <Icon className="w-4 h-4" />
-                </NavLink>
-              );
-            })}
-          </nav>
+          {/* Mobile Navigation Hamburger */}
+          <button
+            onClick={() => setIsMobileMenuOpen(true)}
+            className="md:hidden p-2 rounded-xl text-slate-500 hover:text-black dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/[0.03]"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
 
           {/* User Avatar Companion */}
           {user && (
@@ -194,6 +184,74 @@ export default function Layout({ children }) {
         </div>
 
       </header>
+
+      {/* Mobile Side Menu */}
+      <AnimatePresence>
+        {isMobileMenuOpen && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsMobileMenuOpen(false)}
+              className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm md:hidden"
+            />
+            <motion.div
+              initial={{ x: '-100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '-100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className="fixed top-0 left-0 bottom-0 z-50 w-64 bg-white dark:bg-[#0a0f1c] shadow-2xl border-r border-slate-200 dark:border-white/[0.05] p-6 flex flex-col md:hidden"
+            >
+              <div className="flex items-center justify-between mb-8">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-blue to-brand-cyan flex items-center justify-center">
+                    <Zap className="w-4 h-4 text-white" />
+                  </div>
+                  <span className="text-base font-display font-bold text-black dark:text-white">FOCUSPIE</span>
+                </div>
+                <button
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className="p-2 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-white/[0.05]"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <nav className="flex flex-col gap-2">
+                {navItems.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <NavLink
+                      key={item.to}
+                      to={item.to}
+                      onClick={() => setIsMobileMenuOpen(false)}
+                      className={({ isActive }) =>
+                        `flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300
+                        ${isActive ? 'bg-brand-blue/10 text-brand-blue font-semibold' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/[0.02]'}`
+                      }
+                    >
+                      <Icon className="w-5 h-5" />
+                      <span>{item.label}</span>
+                    </NavLink>
+                  );
+                })}
+              </nav>
+
+              <div className="mt-auto flex justify-center">
+                 {user && (
+                  <InteractiveAvatar 
+                    avatarStyle={avatarStyle} 
+                    sessionState={avatarSessionState} 
+                    level={levelData.level} 
+                    streak={streak.count} 
+                  />
+                )}
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
 
       {/* ── Main Viewport Content ────────────────────── */}
       <main className="pt-24 pb-8 px-4 md:px-8 max-w-[1400px] mx-auto min-h-screen">

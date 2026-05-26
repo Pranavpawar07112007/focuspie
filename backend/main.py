@@ -12,17 +12,19 @@ from contextlib import asynccontextmanager
 
 from database import engine, Base, get_db, SessionLocal
 from models import (
-    FocusSession, WindowLog, Todo, User, UserSettings,
+    FocusSession, WindowLog, Todo, User, UserSettings, FocusRoom, FocusRoomMember,
     TodoCreate, TodoUpdate, TodoResponse,
     SessionResponse, SessionStopResponse,
     UserCreate, UserLogin, TokenResponse, UserResponse,
     UserSettingsResponse, UserSettingsUpdate,
+    RoomCreate, RoomResponse, JoinRoom, RoomMemberResponse
 )
 from auth import (
     hash_password, verify_password, create_access_token,
     get_current_user, get_optional_user,
 )
 from tracker import app_state, start_tracker
+from blocker import block_websites, unblock_websites
 import re
 
 # Create DB tables
@@ -88,6 +90,8 @@ def migrate_schema(db):
                 db.execute(text("ALTER TABLE user_settings ADD COLUMN pomodoro_intervals INTEGER DEFAULT 4"))
             if 'distraction_keywords' not in columns:
                 db.execute(text("ALTER TABLE user_settings ADD COLUMN distraction_keywords TEXT DEFAULT '[]'"))
+            if 'blocked_websites' not in columns:
+                db.execute(text("ALTER TABLE user_settings ADD COLUMN blocked_websites TEXT DEFAULT '[]'"))
             if 'theme' not in columns:
                 db.execute(text("ALTER TABLE user_settings ADD COLUMN theme TEXT DEFAULT 'light'"))
             if 'avatar_style' not in columns:
@@ -100,6 +104,9 @@ def migrate_schema(db):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Ensure hosts file is clean on startup
+    unblock_websites()
+
     # Run automatic timezone migration first
     db = SessionLocal()
     try:
@@ -206,12 +213,14 @@ def get_settings(current_user: User = Depends(get_current_user), db: Session = D
         db.refresh(settings)
     
     keywords = json.loads(settings.distraction_keywords) if settings.distraction_keywords else []
+    blocked_websites = json.loads(settings.blocked_websites) if settings.blocked_websites else []
     return UserSettingsResponse(
         focus_duration=settings.focus_duration,
         short_break_duration=settings.short_break_duration,
         long_break_duration=settings.long_break_duration,
         pomodoro_intervals=settings.pomodoro_intervals,
         distraction_keywords=keywords,
+        blocked_websites=blocked_websites,
         theme=settings.theme,
         avatar_style=settings.avatar_style,
     )
@@ -242,6 +251,8 @@ def update_settings(
         settings.distraction_keywords = json.dumps(updates.distraction_keywords)
         # Update the tracker's live keywords
         app_state.update_keywords(updates.distraction_keywords)
+    if updates.blocked_websites is not None:
+        settings.blocked_websites = json.dumps(updates.blocked_websites)
     if updates.theme is not None:
         settings.theme = updates.theme
     if updates.avatar_style is not None:
@@ -251,12 +262,14 @@ def update_settings(
     db.refresh(settings)
     
     keywords = json.loads(settings.distraction_keywords) if settings.distraction_keywords else []
+    blocked_websites = json.loads(settings.blocked_websites) if settings.blocked_websites else []
     return UserSettingsResponse(
         focus_duration=settings.focus_duration,
         short_break_duration=settings.short_break_duration,
         long_break_duration=settings.long_break_duration,
         pomodoro_intervals=settings.pomodoro_intervals,
         distraction_keywords=keywords,
+        blocked_websites=blocked_websites,
         theme=settings.theme,
         avatar_style=settings.avatar_style,
     )
@@ -419,28 +432,41 @@ def smart_sort(todos):
 
 # ─── Session Endpoints ───────────────────────────────────────────────
 
+from pydantic import BaseModel
+class SessionStartRequest(BaseModel):
+    room_id: Optional[int] = None
+
 @app.post("/api/session/start", response_model=SessionResponse)
 def start_session(
+    req: Optional[SessionStartRequest] = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     if app_state.is_tracking:
         raise HTTPException(status_code=400, detail="A session is already active")
     
-    # Load user's custom distraction keywords if authenticated
+    # Load user's custom distraction keywords and blocked websites if authenticated
     if current_user:
         settings = db.query(UserSettings).filter(UserSettings.user_id == current_user.id).first()
-        if settings and settings.distraction_keywords:
-            try:
-                keywords = json.loads(settings.distraction_keywords)
-                app_state.update_keywords(keywords)
-            except json.JSONDecodeError:
-                pass
+        if settings:
+            if settings.distraction_keywords:
+                try:
+                    keywords = json.loads(settings.distraction_keywords)
+                    app_state.update_keywords(keywords)
+                except json.JSONDecodeError:
+                    pass
+            if settings.blocked_websites:
+                try:
+                    sites = json.loads(settings.blocked_websites)
+                    block_websites(sites)
+                except json.JSONDecodeError:
+                    pass
     
     new_session = FocusSession(
         start_time=datetime.now(),
         status="active",
         user_id=current_user.id if current_user else None,
+        room_id=req.room_id if req else None,
     )
     db.add(new_session)
     db.commit()
@@ -465,6 +491,7 @@ def stop_session(db: Session = Depends(get_db)):
     session.status = "completed"
     db.commit()
     db.refresh(session)
+    unblock_websites()
     app_state.is_tracking = False
     app_state.active_session_id = None
     app_state.on_break = False
@@ -932,10 +959,15 @@ def get_insights(range: str = "today", current_user: User = Depends(get_current_
     now = datetime.now()
     user_id = current_user.id
     
-    # Filter base queries by date range
+    # Filter base queries by date range, excluding room sessions
     if range == "today":
         start_time = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        sessions = db.query(FocusSession).filter(FocusSession.status == "completed", FocusSession.start_time >= start_time, FocusSession.user_id == user_id).all()
+        sessions = db.query(FocusSession).filter(
+            FocusSession.status == "completed", 
+            FocusSession.start_time >= start_time, 
+            FocusSession.user_id == user_id,
+            FocusSession.room_id == None
+        ).all()
         session_ids = [s.id for s in sessions]
         logs = db.query(WindowLog).filter(WindowLog.timestamp >= start_time, WindowLog.session_id.in_(session_ids)).all() if session_ids else []
         
@@ -948,7 +980,12 @@ def get_insights(range: str = "today", current_user: User = Depends(get_current_
         ).all()
     elif range == "week":
         start_time = now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=7)
-        sessions = db.query(FocusSession).filter(FocusSession.status == "completed", FocusSession.start_time >= start_time, FocusSession.user_id == user_id).all()
+        sessions = db.query(FocusSession).filter(
+            FocusSession.status == "completed", 
+            FocusSession.start_time >= start_time, 
+            FocusSession.user_id == user_id,
+            FocusSession.room_id == None
+        ).all()
         session_ids = [s.id for s in sessions]
         logs = db.query(WindowLog).filter(WindowLog.timestamp >= start_time, WindowLog.session_id.in_(session_ids)).all() if session_ids else []
         
@@ -959,7 +996,11 @@ def get_insights(range: str = "today", current_user: User = Depends(get_current_
         ).all()
     else:
         # "all"
-        sessions = db.query(FocusSession).filter(FocusSession.status == "completed", FocusSession.user_id == user_id).all()
+        sessions = db.query(FocusSession).filter(
+            FocusSession.status == "completed", 
+            FocusSession.user_id == user_id,
+            FocusSession.room_id == None
+        ).all()
         session_ids = [s.id for s in sessions]
         logs = db.query(WindowLog).filter(WindowLog.session_id.in_(session_ids)).all() if session_ids else []
         todos = db.query(Todo).filter(Todo.user_id == user_id).all()
@@ -1159,7 +1200,282 @@ def get_live_timeline(current_user: User = Depends(get_current_user), db: Sessio
     }
 
 
+# ─── Room Endpoints ──────────────────────────────────────────────────
+
+import string
+import random
+
+def generate_invite_code(length=6):
+    return ''.join(random.choices(string.ascii_uppercase + string.digits, k=length))
+
+@app.post("/api/rooms", response_model=RoomResponse)
+def create_room(room: RoomCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    code = generate_invite_code()
+    while db.query(FocusRoom).filter(FocusRoom.invite_code == code).first():
+        code = generate_invite_code()
+        
+    new_room = FocusRoom(
+        name=room.name, 
+        invite_code=code, 
+        owner_id=current_user.id,
+        timer_mode=room.timer_mode
+    )
+    db.add(new_room)
+    db.commit()
+    db.refresh(new_room)
+    
+    # Add owner as member
+    member = FocusRoomMember(user_id=current_user.id, room_id=new_room.id)
+    db.add(member)
+    db.commit()
+    
+    return get_room_response(new_room.id, db)
+
+@app.post("/api/rooms/join", response_model=RoomResponse)
+def join_room(join: JoinRoom, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    room = db.query(FocusRoom).filter(FocusRoom.invite_code == join.invite_code.upper()).first()
+    if not room:
+        raise HTTPException(status_code=404, detail="Invalid invite code")
+        
+    existing = db.query(FocusRoomMember).filter(FocusRoomMember.user_id == current_user.id, FocusRoomMember.room_id == room.id).first()
+    if not existing:
+        member = FocusRoomMember(user_id=current_user.id, room_id=room.id)
+        db.add(member)
+        db.commit()
+        
+    return get_room_response(room.id, db)
+
+@app.get("/api/rooms", response_model=list[RoomResponse])
+def list_rooms(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    memberships = db.query(FocusRoomMember).filter(FocusRoomMember.user_id == current_user.id).all()
+    rooms = []
+    for m in memberships:
+        rooms.append(get_room_response(m.room_id, db))
+    return rooms
+
+@app.get("/api/rooms/{room_id}", response_model=RoomResponse)
+def get_room(room_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    membership = db.query(FocusRoomMember).filter(FocusRoomMember.user_id == current_user.id, FocusRoomMember.room_id == room_id).first()
+    if not membership:
+        raise HTTPException(status_code=403, detail="Not a member of this room")
+    return get_room_response(room_id, db)
+
+def get_room_response(room_id: int, db: Session):
+    room = db.query(FocusRoom).filter(FocusRoom.id == room_id).first()
+    members = db.query(FocusRoomMember).filter(FocusRoomMember.room_id == room.id).all()
+    member_responses = []
+    for m in members:
+        settings = db.query(UserSettings).filter(UserSettings.user_id == m.user_id).first()
+        user_obj = db.query(User).filter(User.id == m.user_id).first()
+        member_responses.append({
+            "user_id": m.user_id,
+            "username": user_obj.username,
+            "avatar_style": settings.avatar_style if settings else "fox"
+        })
+    return {
+        "id": room.id,
+        "name": room.name,
+        "invite_code": room.invite_code,
+        "owner_id": room.owner_id,
+        "timer_mode": room.timer_mode,
+        "members": member_responses
+    }
+
+@app.get("/api/rooms/{room_id}/insights")
+def get_room_insights(room_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    # Verify membership
+    membership = db.query(FocusRoomMember).filter(FocusRoomMember.user_id == current_user.id, FocusRoomMember.room_id == room_id).first()
+    if not membership:
+        raise HTTPException(status_code=403, detail="Not a member of this room")
+        
+    sessions = db.query(FocusSession).filter(
+        FocusSession.status == "completed", 
+        FocusSession.room_id == room_id
+    ).all()
+    
+    session_ids = [s.id for s in sessions]
+    logs = db.query(WindowLog).filter(WindowLog.session_id.in_(session_ids)).all() if session_ids else []
+    
+    total_focus_seconds = sum(s.total_duration or 0 for s in sessions)
+    total_sessions = len(sessions)
+    distraction_seconds = sum(1 for l in logs if l.is_distraction)
+    focus_seconds = sum(1 for l in logs if not l.is_distraction)
+    
+    focus_score = round(focus_seconds / max(focus_seconds + distraction_seconds, 1) * 100) if logs else 0
+    
+    distractions_count = {}
+    for log in logs:
+        if log.is_distraction:
+            key = extract_specific_name(log.application_name, log.window_title)
+            distractions_count[key] = distractions_count.get(key, 0) + 1
+            
+    top_distractions = [
+        {"name": k, "minutes": round(v / 60, 1)}
+        for k, v in sorted(distractions_count.items(), key=lambda x: x[1], reverse=True)[:6]
+    ]
+    
+    # Timeline
+    hourly = {}
+    for log in logs:
+        hour_key = log.timestamp.strftime("%H:00") if log.timestamp else "00:00"
+        if hour_key not in hourly:
+            hourly[hour_key] = {"focus": 0, "distraction": 0}
+        if log.is_distraction:
+            hourly[hour_key]["distraction"] += 1
+        else:
+            hourly[hour_key]["focus"] += 1
+
+    timeline = [
+        {"time": k, "Focus": round(v["focus"] / 60, 1), "Distraction": round(v["distraction"] / 60, 1)}
+        for k, v in sorted(hourly.items())
+    ]
+    
+    return {
+        "summary": {
+            "total_focus_minutes": round(total_focus_seconds / 60, 1),
+            "total_distraction_minutes": round(distraction_seconds / 60, 1),
+            "total_sessions": total_sessions,
+            "focus_score": focus_score,
+        },
+        "timeline": timeline,
+        "top_distractions": top_distractions
+    }
+
+@app.delete("/api/rooms/{room_id}")
+async def delete_room(room_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    room = db.query(FocusRoom).filter(FocusRoom.id == room_id).first()
+    if not room:
+        raise HTTPException(status_code=404, detail="Room not found")
+    if room.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Only the owner can delete the room")
+    
+    db.query(FocusRoomMember).filter(FocusRoomMember.room_id == room_id).delete()
+    db.delete(room)
+    db.commit()
+    
+    await manager.broadcast(json.dumps({"type": "ROOM_DELETED"}), room_id)
+    return {"message": "Room deleted"}
+
+@app.delete("/api/rooms/{room_id}/members/{user_id}")
+async def kick_member(room_id: int, user_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    room = db.query(FocusRoom).filter(FocusRoom.id == room_id).first()
+    if not room:
+        raise HTTPException(status_code=404, detail="Room not found")
+    if room.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Only the owner can kick members")
+    if user_id == current_user.id:
+        raise HTTPException(status_code=400, detail="Cannot kick yourself")
+        
+    member = db.query(FocusRoomMember).filter(FocusRoomMember.room_id == room_id, FocusRoomMember.user_id == user_id).first()
+    if not member:
+        raise HTTPException(status_code=404, detail="Member not in room")
+        
+    db.delete(member)
+    db.commit()
+    
+    await manager.broadcast(json.dumps({"type": "MEMBER_KICKED", "user_id": user_id}), room_id)
+    return {"message": "Member removed"}
+
+@app.delete("/api/rooms/{room_id}/leave")
+async def leave_room(room_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    membership = db.query(FocusRoomMember).filter(FocusRoomMember.user_id == current_user.id, FocusRoomMember.room_id == room_id).first()
+    if not membership:
+        raise HTTPException(status_code=404, detail="Not in room")
+    db.delete(membership)
+    db.commit()
+
+    room = db.query(FocusRoom).filter(FocusRoom.id == room_id).first()
+    if room:
+        members = db.query(FocusRoomMember).filter(FocusRoomMember.room_id == room.id).all()
+        if not members:
+            # delete room if empty
+            db.delete(room)
+            db.commit()
+        elif room.owner_id == current_user.id:
+            # transfer ownership to oldest remaining member
+            next_owner = db.query(FocusRoomMember).filter(FocusRoomMember.room_id == room.id).order_by(FocusRoomMember.id.asc()).first()
+            if next_owner:
+                room.owner_id = next_owner.user_id
+                db.commit()
+                
+        # Broadcast that the member left to trigger a refresh for remaining members
+        asyncio.create_task(manager.broadcast(json.dumps({"type": "MEMBER_LEFT"}), room_id))
+
+    return {"message": "Left room"}
+
 # ─── WebSocket ───────────────────────────────────────────────────────
+
+from typing import Dict, List
+
+class ConnectionManager:
+    def __init__(self):
+        # room_id -> list of WebSockets
+        self.active_connections: Dict[int, List[WebSocket]] = {}
+        # Track owner presence: room_id -> boolean
+        self.owner_online: Dict[int, bool] = {}
+        # Track socket to user map to detect owner
+        self.socket_user_map: Dict[WebSocket, int] = {}
+
+    async def connect(self, websocket: WebSocket, room_id: int, user_id: int = None):
+        await websocket.accept()
+        if room_id not in self.active_connections:
+            self.active_connections[room_id] = []
+        self.active_connections[room_id].append(websocket)
+        
+        if user_id is not None:
+            self.socket_user_map[websocket] = user_id
+            # Check if this user is the owner
+            db = SessionLocal()
+            try:
+                room = db.query(FocusRoom).filter(FocusRoom.id == room_id).first()
+                if room and room.owner_id == user_id:
+                    self.owner_online[room_id] = True
+                    await self.broadcast(json.dumps({"type": "OWNER_ONLINE"}), room_id)
+            finally:
+                db.close()
+                
+            # If they just joined, broadcast current owner status to them just in case
+            if room_id in self.owner_online and not self.owner_online[room_id]:
+                await websocket.send_text(json.dumps({"type": "OWNER_OFFLINE"}))
+
+    async def disconnect(self, websocket: WebSocket, room_id: int):
+        if room_id in self.active_connections:
+            try:
+                self.active_connections[room_id].remove(websocket)
+            except ValueError:
+                pass
+                
+        user_id = self.socket_user_map.pop(websocket, None)
+        if user_id is not None:
+            db = SessionLocal()
+            try:
+                room = db.query(FocusRoom).filter(FocusRoom.id == room_id).first()
+                if room and room.owner_id == user_id:
+                    self.owner_online[room_id] = False
+                    await self.broadcast(json.dumps({"type": "OWNER_OFFLINE"}), room_id)
+            finally:
+                db.close()
+
+    async def broadcast(self, message: str, room_id: int):
+        if room_id in self.active_connections:
+            for connection in self.active_connections[room_id]:
+                try:
+                    await connection.send_text(message)
+                except Exception:
+                    pass
+
+manager = ConnectionManager()
+
+@app.websocket("/ws/rooms/{room_id}")
+async def websocket_room(websocket: WebSocket, room_id: int, user_id: int = Query(None)):
+    await manager.connect(websocket, room_id, user_id)
+    try:
+        while True:
+            data = await websocket.receive_text()
+            # Broadcast the state to all connected clients in the room
+            await manager.broadcast(data, room_id)
+    except WebSocketDisconnect:
+        await manager.disconnect(websocket, room_id)
 
 @app.websocket("/ws/alerts")
 async def websocket_endpoint(websocket: WebSocket):

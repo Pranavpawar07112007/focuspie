@@ -1,7 +1,9 @@
 import React, { useEffect } from 'react';
-import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { HashRouter, Routes, Route, Navigate, NavLink } from 'react-router-dom';
+import { Users } from 'lucide-react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { SessionProvider } from './context/SessionContext';
+import { RoomProvider, useRoom } from './context/RoomContext';
 import { ThemeProvider } from './context/ThemeContext';
 import Layout from './components/Layout';
 import DistractionOverlay from './components/DistractionOverlay';
@@ -9,9 +11,11 @@ import LoginPage from './components/LoginPage';
 import SettingsPage from './components/SettingsPage';
 import FocusTimer from './components/FocusTimer';
 import TodoList from './components/TodoList';
+import MiniPlayer from './components/MiniPlayer';
 import Insights from './components/Insights';
 import CalendarView from './components/CalendarView';
 import LiveSessionTimeline from './components/LiveSessionTimeline';
+import RoomsPage from './components/RoomsPage';
 import { playSound } from './utils';
 
 
@@ -72,6 +76,8 @@ class ErrorBoundary extends React.Component {
 
 // ── Dashboard Page ─────────────────────────────────────
 function DashboardPage() {
+  const { currentRoomId } = useRoom();
+
   return (
     <div className="space-y-6 animate-fade-in">
       <div>
@@ -82,7 +88,22 @@ function DashboardPage() {
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
         {/* Timer — takes 3 cols */}
         <div className="lg:col-span-3">
-          <FocusTimer />
+          {currentRoomId ? (
+            <div className="glass p-8 rounded-3xl flex flex-col items-center justify-center text-center h-full min-h-[300px]">
+              <div className="w-16 h-16 bg-brand-blue/10 rounded-full flex items-center justify-center mb-4">
+                <Users className="w-8 h-8 text-brand-blue" />
+              </div>
+              <h3 className="text-xl font-bold text-black dark:text-white mb-2">You are in a Room</h3>
+              <p className="text-slate-500 dark:text-slate-400 mb-6 max-w-sm">
+                Your focus timer is currently managed inside your active room.
+              </p>
+              <NavLink to="/rooms" className="px-6 py-3 bg-brand-blue text-white rounded-xl font-bold hover:bg-brand-blue/90 transition-colors shadow-lg shadow-brand-blue/20">
+                Go to Room
+              </NavLink>
+            </div>
+          ) : (
+            <FocusTimer />
+          )}
         </div>
 
         {/* Column for tasks and live activity tracking timeline — takes 2 cols */}
@@ -125,6 +146,27 @@ function SettingsPageWrapper() {
 }
 
 
+function MainApp() {
+  return (
+    <SessionProvider>
+      <RoomProvider>
+        <Layout>
+          <Routes>
+            <Route path="/" element={<DashboardPage />} />
+            <Route path="/tasks" element={<TasksPage />} />
+            <Route path="/insights" element={<InsightsPage />} />
+            <Route path="/calendar" element={<CalendarPage />} />
+            <Route path="/settings" element={<SettingsPageWrapper />} />
+            <Route path="/rooms" element={<RoomsPage />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </Layout>
+        <DistractionOverlay />
+      </RoomProvider>
+    </SessionProvider>
+  );
+}
+
 // ── App Content (needs auth context) ──────────────────
 function AppContent() {
   const { isAuthenticated, isLoading } = useAuth();
@@ -158,57 +200,18 @@ function AppContent() {
       <Route path="/login" element={
         isAuthenticated ? <Navigate to="/" replace /> : <LoginPage />
       } />
-      <Route path="/" element={
+      <Route path="/miniplayer" element={
         <ProtectedRoute>
           <SessionProvider>
-            <Layout>
-              <DashboardPage />
-            </Layout>
-            <DistractionOverlay />
+            <MiniPlayer />
           </SessionProvider>
         </ProtectedRoute>
       } />
-      <Route path="/tasks" element={
+      <Route path="/*" element={
         <ProtectedRoute>
-          <SessionProvider>
-            <Layout>
-              <TasksPage />
-            </Layout>
-            <DistractionOverlay />
-          </SessionProvider>
+          <MainApp />
         </ProtectedRoute>
       } />
-      <Route path="/insights" element={
-        <ProtectedRoute>
-          <SessionProvider>
-            <Layout>
-              <InsightsPage />
-            </Layout>
-            <DistractionOverlay />
-          </SessionProvider>
-        </ProtectedRoute>
-      } />
-      <Route path="/calendar" element={
-        <ProtectedRoute>
-          <SessionProvider>
-            <Layout>
-              <CalendarPage />
-            </Layout>
-            <DistractionOverlay />
-          </SessionProvider>
-        </ProtectedRoute>
-      } />
-      <Route path="/settings" element={
-        <ProtectedRoute>
-          <SessionProvider>
-            <Layout>
-              <SettingsPageWrapper />
-            </Layout>
-            <DistractionOverlay />
-          </SessionProvider>
-        </ProtectedRoute>
-      } />
-      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
 }

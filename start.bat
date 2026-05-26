@@ -21,7 +21,7 @@ if not exist "frontend\dist\index.html" (
 )
 
 echo [1/3] Spinning up FastAPI backend server on port 8000...
-start "FocusPie Backend" /b cmd /c "cd backend && venv\Scripts\python.exe -m uvicorn main:app --port 8000"
+start "FocusPie Backend" /b cmd /c "cd backend && venv\Scripts\python.exe -m uvicorn main:app --host 0.0.0.0 --port 8000"
 
 echo [2/3] Spinning up static frontend server on port 5173...
 start "FocusPie Frontend" /b cmd /c "cd frontend\dist && ..\..\backend\venv\Scripts\python.exe -m http.server 5173"

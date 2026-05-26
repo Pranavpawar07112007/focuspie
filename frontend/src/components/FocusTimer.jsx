@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
-import { Play, Pause, Square, Sliders, Flame, Coffee, Clock } from 'lucide-react';
+import { Play, Pause, Square, Sliders, Flame, Coffee, Clock, PictureInPicture2 } from 'lucide-react';
 import { useSession } from '../context/SessionContext';
+import { useRoom } from '../context/RoomContext';
+import { useAuth } from '../context/AuthContext';
 
 function formatTime(seconds) {
   const m = Math.floor(seconds / 60);
@@ -12,6 +14,7 @@ export default function FocusTimer() {
   const { 
     isActive, 
     isPaused, 
+    isLocked,
     timeLeft, 
     progress, 
     timerMode, 
@@ -26,12 +29,19 @@ export default function FocusTimer() {
     setTimeLeft, 
     setTotalTime,
     setPomodoroIntervals,
+    setFocusDuration,
+    setShortBreakDuration,
+    setLongBreakDuration,
     focusDuration,
     shortBreakDuration,
     longBreakDuration
   } = useSession();
 
+  const { roomDetails, ownerOffline } = useRoom();
+  const { user } = useAuth();
+
   const [activeTab, setActiveTab] = useState('standard'); // 'standard', 'pomodoro', 'custom'
+  const [standardMinutes, setStandardMinutes] = useState(25);
   const [customMinutes, setCustomMinutes] = useState(25);
 
   const radius = 140;
@@ -46,8 +56,8 @@ export default function FocusTimer() {
     if (isActive) return;
     setActiveTab(tab);
     if (tab === 'standard') {
-      setTimeLeft(focusDuration * 60);
-      setTotalTime(focusDuration * 60);
+      setTimeLeft(standardMinutes * 60);
+      setTotalTime(standardMinutes * 60);
     } else if (tab === 'pomodoro') {
       setTimeLeft(focusDuration * 60);
       setTotalTime(focusDuration * 60);
@@ -63,7 +73,7 @@ export default function FocusTimer() {
     } else if (currentTab === 'custom') {
       start(customMinutes, 'standard');
     } else {
-      start(focusDuration, 'standard');
+      start(standardMinutes, 'standard');
     }
   };
 
@@ -79,6 +89,21 @@ export default function FocusTimer() {
           onBreak ? 'bg-brand-emerald/[0.08]' : 'bg-brand-blue/[0.08]'
         }`} />
       )}
+
+      {/* Miniplayer Button */}
+      <div className="absolute top-6 right-6 z-20">
+        <button
+          onClick={() => {
+            if (window.electronAPI && window.electronAPI.openMiniPlayer) {
+              window.electronAPI.openMiniPlayer();
+            }
+          }}
+          className="p-2 rounded-xl text-slate-400 hover:text-brand-blue hover:bg-brand-blue/10 transition-colors"
+          title="Open Miniplayer"
+        >
+          <PictureInPicture2 className="w-5 h-5" />
+        </button>
+      </div>
 
       {/* Premium Tab Picker for Inactive Timer */}
       {!isActive && (
@@ -171,26 +196,56 @@ export default function FocusTimer() {
 
       {/* Pomodoro Cycle Indicators */}
       {currentTab === 'pomodoro' && (
-        <div className="flex flex-col items-center mb-6">
+        <div className="flex flex-col items-center mb-6 w-full max-w-[320px]">
           {/* Interval selector (only when NOT active) */}
           {!isActive && (
-            <div className="flex items-center gap-3 mb-3">
-              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Intervals</span>
-              <div className="flex gap-1">
-                {[2, 3, 4, 5, 6, 8].map((n) => (
-                  <button
-                    key={n}
-                    onClick={() => setPomodoroIntervals(n)}
-                    className={`w-7 h-7 rounded-lg text-[11px] font-bold transition-all duration-200 border ${
-                      pomodoroIntervals === n
-                        ? 'bg-brand-blue/15 border-brand-blue text-brand-blue shadow-sm'
-                        : 'bg-slate-100 dark:bg-white/[0.04] border-slate-200 dark:border-white/[0.06] text-slate-500 hover:bg-brand-blue/10 hover:text-brand-blue hover:border-brand-blue/20'
-                    }`}
-                  >
-                    {n}
-                  </button>
-                ))}
+            <div className="flex flex-col gap-4 mb-5 w-full bg-slate-50 dark:bg-white/[0.02] p-4 rounded-xl border border-slate-200 dark:border-white/[0.05]">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Intervals</span>
+                <div className="flex gap-1">
+                  {[2, 3, 4, 5, 6, 8].map((n) => (
+                    <button
+                      key={n}
+                      onClick={() => setPomodoroIntervals(n)}
+                      className={`w-6 h-6 rounded-md text-[10px] font-bold transition-all duration-200 border ${
+                        pomodoroIntervals === n
+                          ? 'bg-brand-blue/15 border-brand-blue text-brand-blue shadow-sm'
+                          : 'bg-white dark:bg-white/[0.04] border-slate-200 dark:border-white/[0.06] text-slate-500 hover:bg-brand-blue/10 hover:text-brand-blue hover:border-brand-blue/20'
+                      }`}
+                    >
+                      {n}
+                    </button>
+                  ))}
+                </div>
               </div>
+
+              {[
+                { label: 'Focus', val: focusDuration, set: setFocusDuration, min: 1, max: 120, color: 'brand-blue' },
+                { label: 'Short Break', val: shortBreakDuration, set: setShortBreakDuration, min: 1, max: 30, color: 'brand-emerald' },
+                { label: 'Long Break', val: longBreakDuration, set: setLongBreakDuration, min: 1, max: 60, color: 'brand-purple' }
+              ].map(({ label, val, set, min, max, color }) => (
+                <div key={label} className="w-full">
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">{label}</span>
+                    <span className={`text-[10px] font-bold text-${color}`}>{val}m</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={min}
+                    max={max}
+                    value={val}
+                    onChange={(e) => {
+                      const v = parseInt(e.target.value, 10);
+                      set(v);
+                      if (label === 'Focus') {
+                        setTimeLeft(v * 60);
+                        setTotalTime(v * 60);
+                      }
+                    }}
+                    className={`w-full h-1 bg-slate-200 dark:bg-white/10 rounded-lg appearance-none cursor-pointer accent-${color}`}
+                  />
+                </div>
+              ))}
             </div>
           )}
           <div className="flex gap-2.5 items-center mb-1">
@@ -226,11 +281,12 @@ export default function FocusTimer() {
       {!isActive && currentTab === 'standard' && (
         <div className="flex gap-2 mb-6">
           {[15, 25, 45, 60].map((m) => {
-            const isSel = timeLeft === m * 60;
+            const isSel = standardMinutes === m;
             return (
               <button
                 key={m}
                 onClick={() => {
+                  setStandardMinutes(m);
                   setTimeLeft(m * 60);
                   setTotalTime(m * 60);
                 }}
@@ -275,11 +331,12 @@ export default function FocusTimer() {
         {!isActive ? (
           <button
             onClick={handleStart}
-            className="group flex items-center gap-2.5 px-8 py-3.5 rounded-full font-semibold text-sm
-              bg-gradient-to-r from-brand-blue to-brand-blue-light text-white
-              shadow-lg shadow-brand-blue/25
-              hover:shadow-brand-blue/40 hover:scale-[1.03]
-              active:scale-[0.97] transition-all duration-300"
+            disabled={isLocked}
+            className={`group flex items-center gap-2.5 px-8 py-3.5 rounded-full font-semibold text-sm transition-all duration-300 ${
+              isLocked 
+                ? 'bg-slate-300 dark:bg-white/10 text-slate-500 dark:text-slate-400 cursor-not-allowed'
+                : 'bg-gradient-to-r from-brand-blue to-brand-blue-light text-white shadow-lg shadow-brand-blue/25 hover:shadow-brand-blue/40 hover:scale-[1.03] active:scale-[0.97]'
+            }`}
           >
             <Play className="w-4 h-4 fill-current" />
             Start Session
@@ -289,10 +346,12 @@ export default function FocusTimer() {
             {isPaused ? (
               <button
                 onClick={resume}
-                className="group flex items-center gap-2 px-6 py-3.5 rounded-full font-semibold text-sm
-                  bg-gradient-to-r from-brand-blue to-brand-blue-light text-white
-                  shadow-lg shadow-brand-blue/25 hover:shadow-brand-blue/40
-                  hover:scale-[1.03] active:scale-[0.97] transition-all duration-300"
+                disabled={isLocked}
+                className={`group flex items-center gap-2 px-6 py-3.5 rounded-full font-semibold text-sm transition-all duration-300 ${
+                  isLocked
+                    ? 'bg-slate-300 dark:bg-white/10 text-slate-500 dark:text-slate-400 cursor-not-allowed'
+                    : 'bg-gradient-to-r from-brand-blue to-brand-blue-light text-white shadow-lg shadow-brand-blue/25 hover:shadow-brand-blue/40 hover:scale-[1.03] active:scale-[0.97]'
+                }`}
               >
                 <Play className="w-4 h-4 fill-current" />
                 Resume
@@ -300,10 +359,12 @@ export default function FocusTimer() {
             ) : (
               <button
                 onClick={pause}
-                className="flex items-center gap-2 px-6 py-3.5 rounded-full font-semibold text-sm
-                  bg-slate-100 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] text-black dark:text-white
-                  hover:bg-amber-500/10 hover:border-amber-500/20 hover:text-amber-600 dark:hover:text-amber-400
-                  transition-all duration-300"
+                disabled={isLocked}
+                className={`flex items-center gap-2 px-6 py-3.5 rounded-full font-semibold text-sm transition-all duration-300 ${
+                  isLocked
+                    ? 'bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 text-slate-400 cursor-not-allowed'
+                    : 'bg-slate-100 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] text-black dark:text-white hover:bg-amber-500/10 hover:border-amber-500/20 hover:text-amber-600 dark:hover:text-amber-400'
+                }`}
               >
                 <Pause className="w-4 h-4" />
                 Pause
@@ -311,10 +372,12 @@ export default function FocusTimer() {
             )}
             <button
               onClick={stop}
-              className="flex items-center gap-2 px-6 py-3.5 rounded-full font-semibold text-sm
-                bg-slate-100 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] text-black dark:text-white
-                hover:bg-brand-rose/10 hover:border-brand-rose/20 hover:text-brand-rose
-                transition-all duration-300"
+              disabled={isLocked}
+              className={`flex items-center gap-2 px-6 py-3.5 rounded-full font-semibold text-sm transition-all duration-300 ${
+                isLocked
+                  ? 'bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 text-slate-400 cursor-not-allowed'
+                  : 'bg-slate-100 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] text-black dark:text-white hover:bg-brand-rose/10 hover:border-brand-rose/20 hover:text-brand-rose'
+              }`}
             >
               <Square className="w-3.5 h-3.5 fill-current" />
               Stop
